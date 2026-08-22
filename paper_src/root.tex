@@ -1,0 +1,844 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% IEEE RA-L submission skeleton
+% "Cross-Body Readability of Persistent Action Memory for Frozen VLA Policies"
+%
+% FORMAT: ieeeconf (ICRA conference class), retained by explicit instruction.
+% Keep this file named root.tex for PaperPlaza.
+%
+% CONSTRUCTION DRAWING: RAL2027/idea/paper_outline_v1.md
+% Every "% >>" comment below is a writing instruction from that outline.
+% Every \todo{} is a number or decision that must be resolved before submission.
+%
+% PAGE BUDGET --- CAUTION: the proportions in paper_outline_v1.md Sec. 0.5 were
+% computed against IEEEtran two-column *journal* metrics and sum to 6.00 pages.
+% ieeeconf sets a different text block, so re-measure before trusting any
+% per-section page number below.  The RELATIVE ordering of cuts still holds:
+%   Table I to pure symbols > references packed by family > sim out of body >
+%   Fig. 1 panel (c) dropped > II-D folded into II-C.
+% Section proportions carried over as a starting point, to be re-measured:
+%   I Intro 1.00 | II RW 0.75 | III Method 1.30 | IV Setup 0.40
+%   V Results 2.05 | VI Concl 0.15 | Refs 0.35
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\documentclass[letterpaper, 10 pt, conference]{ieeeconf}
+
+\IEEEoverridecommandlockouts
+\overrideIEEEmargins
+
+% --- packages -----------------------------------------------------------------
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{cite}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+
+% --- project macros -----------------------------------------------------------
+% System name is a placeholder: PORTMEM has NOT been collision-checked beyond
+% arXiv (zero hits 2026-08-22).  Renaming costs nothing while this macro is used.
+\newcommand{\sysname}{PortMem}
+% Unresolved quantities render in bold so they cannot be missed in a proof read.
+\newcommand{\todo}[1]{\textbf{[#1]}}
+
+% --- metadata -----------------------------------------------------------------
+\title{\LARGE \bf
+Whose Memory Can Be Read? Cross-Body Readability of\\
+Persistent Action Memory for Frozen VLA Policies
+}
+
+% Double-blind: keep anonymous for submission; restore affiliations after acceptance.
+\author{Anonymous Author(s)%
+\thanks{Anonymous Institution}%
+}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+\pagestyle{empty}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% ABSTRACT  (~195 words; outline Sec. 0.2)
+% >> RED LINES, enforce at proof time:
+% >>  - Forbidden words: first / novel / unexplored / "we fill the gap".
+% >>  - Three qualifiers are load-bearing and MUST all survive editing:
+% >>      "executable action content", "during its own deployment",
+% >>      "no further update to its policy".
+% >>    Drop any one and RoboOS, RAM or RECAP becomes a counterexample that
+% >>    kills the claim in one sentence (see idea/threat_RAM_RoboOS.md).
+% >>  - "injection rate" must appear: it pre-empts the "transfer rate can be
+% >>    gamed by abstaining" attack (reviewer R2-B1).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{abstract}
+A robot that improves during deployment must put what it learned somewhere.
+Retrieval-augmented frozen vision-language-action (VLA) policies already
+accumulate deployment experience without gradient updates, and cross-embodiment
+retrieval pools already exist. What has not been shown is a persistent store of
+\emph{executable action content}, written by a robot \emph{during its own
+deployment}, that a \emph{second deployed robot} reads with \emph{no further
+update to its policy}. We ask what an entry must contain for this to be
+possible. Each experience is written at four levels of abstraction---a
+re-groundable language summary, an object-centric subgoal sequence,
+object-anchored end-effector deltas, and a joint-space action chunk---under a
+body-agnostic key with a learned alignment map, and every level is decoded into
+the reader's own action space before it is injected into the reader's frozen
+flow-matching sampler. A fixed-base Franka FR3 and a mobile manipulator both
+write to and read from one store, in both directions. We report the
+transferability spectrum across the four levels, decompose the cross-body loss
+into key-side, retargeting and value-side terms, and report the per-trial
+memory-harm rate and the injection rate that make these numbers interpretable.
+Admitting a third, previously unseen reader costs \todo{N} paired episodes and
+\todo{M} GPU-minutes, and no policy gradient.
+\end{abstract}
+
+% >> ieeeconf does not define \begin{IEEEkeywords}; ICRA does not print a keyword
+% >> block.  Keywords are entered in PaperPlaza instead.  Suggested set:
+% >> continual learning; deep learning methods; imitation learning;
+% >> transfer learning; manipulation planning.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Introduction}
+\label{sec:intro}
+% BUDGET 1.00 page = Fig. 1 (0.22) + ~800 words of body across 5 paragraphs.
+%
+% GLOBAL RED LINES FOR THIS SECTION (outline Sec. 1.0):
+%  1. Never write "no one has done X".  Write what each prior system stores and
+%     let Table I do the exclusion.  Reviewer 2 is assumed to be an author of
+%     [rts] and [recap]; every sentence must survive that reading.
+%  2. Do NOT argue from any single system's default similarity gate.  The
+%     "mechanical veto" argument (gamma_sim = 0.9992 blocks cross-body queries)
+%     is FALSIFIED by [rts] Table 8: gamma_sim in {0.9988 ... 0.9998} yields SR
+%     {93.7, 94.1, 94.4, 94.0, 93.5} against a 92.4 memoryless base, and the
+%     paper calls it "the trade-off between prior coverage and prior quality".
+%     Verified verbatim against the PDF on 2026-08-22.  Do not resurrect it.
+%  3. n = 2 bodies.  Never write "generalizes across embodiments".  The licensed
+%     phrase is "a spectrum measured on this pair".
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% >> PARAGRAPH 1 --- The phenomenon, and why the obvious answer is not the answer.
+% >> Function: establish that deployment-time experience accumulation already
+% >> works, so the paper is not selling that.  Then name the cost that co-training
+% >> does not pay: TIME.  A shared corpus retrained periodically cannot serve a
+% >> body that must use yesterday's lesson today.  This is the answer to the
+% >> strongest "your axis is invented" objection (R1-B8) --- move the value
+% >> proposition off the cost axis and onto the latency axis.
+% >> Cite: [rts, recap, dejavu, roboharness] for the family; [openx] for co-training.
+\todo{P1: phenomenon + why co-training is not the answer}
+
+% >> PARAGRAPH 2 --- The premise nobody writes down.  THE PIVOT OF THE PAPER.
+% >> Wording precision decides survival.  Use the three qualifiers.  State it as
+% >> an observation about entries, not as a claim about the literature's oversight.
+% >> Counterexample handling, all verified first-hand:
+% >>   [recap] abstract: "Fine-tuning is needed only to take on a new, unseen
+% >>       embodiment, not for each new task."   -> pool body is never deployed.
+% >>   [ram]  : 660 offline entries from DROID/HOI4D/web, partly hand-curated;
+% >>            converts its own successful rollouts into ACT weights, NOT entries.
+% >>   [roboos]: shared memory is scene graphs + "motion domain constraints, joint
+% >>            states and battery levels" -> no action content crosses.
+% >>   [clare, vlapro]: entries ARE weights -> structurally body-bound.
+\todo{P2: the premise --- persistent, self-written, action-bearing memory is body-locked}
+
+% >> PARAGRAPH 3 --- Why this is a property of the entry, not of anyone's oversight.
+% >> Argue from what is stored, not from anyone's threshold.  A joint-space chunk
+% >> is meaningless off its kinematics; an end-effector trajectory in the writer's
+% >> base frame is meaningless to a body whose base moves.  The transferability of
+% >> an experience is fixed at WRITE time and cannot be recovered at read time.
+% >> This is the sentence the whole method answers.
+\todo{P3: transferability is decided when the entry is written}
+
+% >> PARAGRAPH 4 --- What we change, why it is solvable now, and what we did not invent.
+% >> The "did not invent" clause goes HERE, not buried in Sec. III: adopting
+% >> [rts]'s injection machinery openly converts a competitor into infrastructure.
+\todo{P4: layered value + body-agnostic key + one shared readout interface}
+
+% >> PARAGRAPH 5 --- What we verify, the predictions, and the boundary.
+% >> State the boundary proactively: one body pair, tasks both bodies can execute,
+% >> absolute success rates that may be low in the regime we test.  Reference
+% >> points for the reader (verified): [recap] real-robot close-cabinet 30%;
+% >> [robomme] best method 44.51% vs. human 90.5%.
+\todo{P5: what is measured, the four predictions, and the honest boundary}
+
+\begin{figure}[t]
+  \centering
+  % \includegraphics[width=\columnwidth]{fig1_teaser}
+  \caption{\textbf{\todo{Fig.~1 teaser --- two panels only}.}
+  % >> Panel (a): one store, two deployed bodies, arrows both ways, a badge
+  % >>   reading "no policy update after deployment".
+  % >> Panel (b): the same entry read at two levels by two bodies.
+  % >> Panel (c) of the earlier design (spectrum curve) is DELETED --- it appears
+  % >>   once, in Fig.~4.  Saves 0.07 page.
+  }
+  \label{fig:teaser}
+\end{figure}
+
+% ---- Contributions (outline Sec. 0.4, English is final; edit only for length) ---
+\noindent\textbf{Contributions.}
+\begin{enumerate}
+\item \textbf{We quantify what a reader swap costs a retrieval memory, in
+threshold-free terms.} We measure retrieval quality for same-body and cross-body
+queries under four key constructions, reporting precision@$k$ and ROC-AUC against
+a positive-pair definition derived from our own (task, phase) annotation, and
+reporting the recall---equivalently, the abstention---that a cross-body reader
+must pay to reach the same precision as a same-body reader. We deliberately avoid
+arguing from the default similarity gate of any single system: the gate value of
+a state-of-the-art same-body retriever is a per-deployment trade-off knob, not a
+property of the representation, and its own sensitivity study shows the method is
+nearly flat across it.
+
+\item \textbf{We make the transferability of an experience an experimentally
+separable variable.} One collection produces four value levels per entry under a
+shared key and, crucially, a shared readout interface: every level is decoded
+into the reader's action space and injected at the same point of the same frozen
+sampler, so that abstraction level is varied while the injection path is held
+fixed. We report each level with oracle content and with automatically generated
+content, separating what the representation costs from what the content
+generator costs, and we compare against a derive-on-read store that materialises
+only the lowest level and reconstructs the rest at read time.
+
+\item \textbf{We report a persistent action store that two deployed bodies share,
+write and read bidirectionally, with no gradient reaching either policy once
+deployed.} Each body's base policy is fine-tuned once, before deployment, on
+tasks disjoint from the memory-evaluation tasks; nothing is updated when the
+store is admitted or when it grows. We further admit a third, previously unseen
+reader body and report its admission cost in paired episodes and GPU-minutes,
+alongside the cost of a per-body target-side fine-tune on the same pair. We
+report the per-trial memory-harm rate---the fraction of paired trials, at matched
+initial state and matched sampler noise, in which the store makes the reader
+worse than its memoryless base---together with the injection rate that conditions
+it.
+
+\item \textbf{We decompose the cross-body loss and characterise a shared store.}
+An oracle ladder attributes the gap between a same-body and a cross-body reader
+to three additive terms---retrieval, retargeting, and value inexecutability---
+without post-hoc human labelling of failures. On a corpus-seeded store of
+\todo{1e4--1e5} entries (\todo{N} episodes) shared across tasks and bodies, we
+show that the binding constraint is retrieval precision and cross-body
+interference rather than capacity.
+\end{enumerate}
+
+% >> This paragraph is DEFENSIVE and must not be cut for space.  It is what makes
+% >> Sec. III-D's "adopted unchanged" a true statement rather than an overclaim.
+\noindent\textbf{We explicitly do not claim} the intermediate-state injection
+into a flow-matching sampler, the confidence-adaptive guidance strength, the
+abstain-on-low-confidence fallback, or the component-aware aggregation of
+retrieved chunks---all adopted from~\cite{rts} and used unchanged once an entry
+has been decoded into the reader's action space. Nor do we claim gradient-free
+growth of a retrieval pool, demonstrated by~\cite{recap}, nor entry-level
+revocability, demonstrated by~\cite{clare}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Related Work}
+\label{sec:related}
+% BUDGET 0.75 page = Table I (0.22, two-column, pure symbols) + 5 paragraphs.
+% ORGANISING PRINCIPLE (internalise before writing): partition by WHERE THE
+% EXPERIENCE GOES, not by method family.  Episode buffer -> parameters ->
+% explicit entries.  The partition itself forces our position out.
+% II-D is folded into the last paragraph of II-C to save a subsection header.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Memory That Ends With the Episode}
+% >> ~110 words, 1 paragraph.  [memoryvla, mem] and the in-context line
+% >> [robottt, mimicdroid].  Closing move: the in-context works ALREADY read
+% >> across bodies (human video -> robot), which is the most aggressive
+% >> cross-body read anyone has shown --- and it is discarded when the context
+% >> ends.  This is the cleanest way to show persistence and cross-readability
+% >> have never been held simultaneously.
+\todo{RW-A}
+
+\subsection{Memory Written Into Parameters}
+% >> ~150 words.  [clare, vlapro] hold entry-level revocability, so revocability
+% >> is NOT our selling point --- say so explicitly, it costs one clause and buys
+% >> credibility.  The single structural difference: a weight-valued entry cannot
+% >> be read by another body.
+% >> Also settle the forgetting dispute here, WITHOUT taking a side.  Suggested
+% >> wording (outline Sec. 2.2): note that [liu2026forgetting] and [infovla]
+% >> report opposite conclusions on LIBERO, and that our value proposition does
+% >> not rest on either --- we report forgetting as a diagnostic, not a claim.
+\todo{RW-B}
+
+\subsection{Memory Written As Explicit Entries}
+% >> ~200 words, 2 paragraphs.  HEAVIEST SUBSECTION.
+% >> Para 1: the frozen-policy retrieval family [rts, recap, dejavu, roboharness]
+% >>   and the benchmark [robomme].  Position as our foundation.  State plainly
+% >>   that we adopt [rts]'s readout.
+% >> Para 2: the retrieve-align-replay lineage that already occupies value levels
+% >>   (2) and (3).  Verbatim-verified facts to use:
+% >>     [ram]      660 entries, offline DROID/HOI4D/web, hand-refined; distils
+% >>                its own rollouts into ACT WEIGHTS, not entries.
+% >>     [roboabc]  51 categories from EPIC-KITCHENS-100, hand-filtered;
+% >>                "embodiment" appears 0 times in the paper.
+% >>     [dipalo2023] the FIRST occupant of level (3): (bottleneck image,
+% >>                EE-frame velocity trajectory, task name), kinesthetic teaching,
+% >>                single Sawyer.  ITS GENERALISATION AXIS IS OBJECT IDENTITY,
+% >>                NOT EMBODIMENT --- this is our clean dividing line.
+% >>     [dinobot]  same stored value, different alignment mechanism.
+% >>     [vinn]     level (4); patches the human-to-robot gap with a HAND-TUNED
+% >>                per-axis scaling constant --- cite this as positive evidence
+% >>                that low-level actions need manual recalibration across bodies.
+% >>     [ag2manip] no memory at all; reports 85.7% proxy vs 78.7% retargeted,
+% >>                i.e. a measured 7.0-point cost of abstraction, single Franka.
+% >> Fold II-D here: [behaviorretrieval, strap, flowretrieval] retrieve in order
+% >>   to produce gradients --- experience becomes weights, the very default we
+% >>   are questioning.
+% >> Closing sentence of the section (do not soften): across this literature the
+% >>   abstraction level of a stored experience is fixed by design, no experience
+% >>   is written by the robot that later reads it, and no transfer rate between
+% >>   bodies is reported.
+\todo{RW-C}
+
+% ---- Table I -----------------------------------------------------------------
+% >> Pure symbols, prose pushed into the caption.  14x8 prose -> 8x6 symbols
+% >> saves 0.40 page (outline Sec. 0.5, cut #1).
+% >> COLUMN ORDER IS DELIBERATE (R3-B3): the three qualifiers of the Abstract
+% >> appear as columns 3-5, so the Abstract's core sentence is verified by
+% >> reading across, and the
+% >> two rows that would otherwise look like counterexamples (RECAP, RAM) are
+% >> excluded by a column the reader can see.
+\begin{table}[t]
+\caption{Where a deployment experience goes, and who can read it afterwards.
+\todo{Fill each cell from the first-hand PDF audit in idea/threat\_RAM\_RoboOS.md;
+mark unknown as ``?'', never guess.}
+Columns: \emph{Pers.} persists across episodes; \emph{Act.} the entry carries
+executable action content; \emph{Self} written by a robot during its own
+deployment; \emph{X-read} readable by a body that did not write it;
+\emph{Del.} entry-level deletion.}
+\label{tab:landscape}
+\centering
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Memory & Pers. & Act. & Self & X-read & Del. \\
+\midrule
+Episodic buffers~\cite{memoryvla,mem}      & $\times$    & $\checkmark$ & $\checkmark$ & --           & --           \\
+In-context~\cite{robottt,mimicdroid}       & $\times$    & $\checkmark$ & $\times$     & $\checkmark$ & --           \\
+Adapters~\cite{clare,vlapro}               & $\checkmark$& $\checkmark$ & $\checkmark$ & $\times$     & $\checkmark$ \\
+Retrieval pool~\cite{recap}                & $\checkmark$& $\checkmark$ & $\times$     & \todo{?}     & $\checkmark$ \\
+Affordance memory~\cite{ram,roboabc}       & $\checkmark$& \todo{?}     & $\times$     & $\checkmark$ & $\checkmark$ \\
+Replay buffers~\cite{dipalo2023,dinobot,vinn} & $\checkmark$& $\checkmark$ & $\times$  & $\times$     & $\checkmark$ \\
+Success memory~\cite{rts,dejavu,roboharness} & $\checkmark$& $\checkmark$ & $\checkmark$ & $\times$   & $\checkmark$ \\
+Scene/state memory~\cite{roboos}           & $\checkmark$& $\times$     & $\checkmark$ & $\checkmark$ & $\checkmark$ \\
+\midrule
+\textbf{\sysname{} (ours)}                 & $\checkmark$& $\checkmark$ & $\checkmark$\rlap{$^{\dagger}$} & $\checkmark$ & $\checkmark$ \\
+\bottomrule
+\end{tabular}
+\\[2pt]
+\footnotesize $^{\dagger}$\,for the deployment store $\mathcal{S}_\mathrm{deploy}$;
+the scaling study uses a corpus-seeded store $\mathcal{S}_\mathrm{corpus}$.
+\end{table}
+
+% >> REBUTTAL BANK --- keep these in the rebuttal template, not in the paper.
+% >>  "This is NEC with a VLA backbone" [mfec, nec]: NEC's memory is a Q-table for
+% >>     one agent in one body; our question is cross-body readability, a dimension
+% >>     episodic control never addresses.
+% >>  "This is [rts] with a different key": we adopt their readout unchanged and
+% >>     say so; the contribution is what an entry stores, measured across four
+% >>     levels under a fixed injection path.
+% >>  "[recap] already does training-free task addition": yes, and we cite it as
+% >>     such; its pool body is never deployed and its own abstract states that
+% >>     fine-tuning is required for a new embodiment.
+% >>  "Cross-embodiment is solved by co-training [openx]": co-training amortises
+% >>     over a retraining cycle; it cannot serve a lesson learned this morning.
+% >>     Experiment E5 measures exactly this crossover.
+% >>  "Forgetting isn't a problem [liu2026forgetting]": agreed, and our claim does
+% >>     not need it; ER is included as a baseline precisely because it is strong.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Method}
+\label{sec:method}
+% Sub-budget: III-A 0.20 | III-B 0.25 | III-C 0.22 | III-D 0.25 | III-E 0.14
+%             Fig. 2 0.20 | Alg. 1 0.12
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Problem Setting}
+\label{sec:method:setting}
+
+% >> OPENING SENTENCE --- fixes terminology for the whole paper and draws the
+% >> line against [recap] in the same breath.  Do not reorder.
+We call the body that produced an entry its \emph{writer} and the body that
+consumes it a \emph{reader}; a \emph{reader swap} is the substitution of one for
+the other with the store held fixed. Unlike~\cite{recap}, where the pool
+embodiment is never deployed, both of our bodies are deployed and each is both a
+writer and a reader.
+
+Let $\mathcal{B}=\{b_A,b_B\}$ be two bodies with frozen flow-matching VLA
+policies $\pi_b(\mathbf{a}\mid\mathbf{o},\ell)$ emitting chunks
+$\mathbf{a}\in\mathbb{R}^{H\times d_b}$. Each $\pi_b$ is fine-tuned once, before
+deployment, on a task set $\mathcal{T}_\mathrm{base}$ with
+$\mathcal{T}_\mathrm{base}\cap\mathcal{T}_\mathrm{eval}=\emptyset$, and is never
+updated again (experiment~E0). The store is
+\begin{equation}
+\mathcal{M}=\{e_i\}_{i=1}^{N},\qquad
+e_i=\bigl(\mathbf{k}_i,\ \{v_i^{(\ell)}\}_{\ell=1}^{4},\ \beta_i,\ c_i,\ t_i\bigr),
+\label{eq:entry}
+\end{equation}
+with $\mathbf{k}_i$ a body-agnostic key, $v_i^{(\ell)}$ the value at abstraction
+level $\ell$, $\beta_i$ the writer-body tag, $c_i$ a write-gate calibration
+score and $t_i$ a timestamp. Writing is a single step with no gradient,
+\begin{equation}
+\mathcal{M}\leftarrow\mathcal{M}\cup
+\bigl\{\,e(\sigma)\ :\ \sigma\in\mathrm{Seg}(\tau),\ g(\tau)=1\,\bigr\},
+\label{eq:write}
+\end{equation}
+where $\mathrm{Seg}$ segments a rollout into motion segments and $g$ is the write
+gate. At read time on body $b$,
+\begin{align}
+\mathcal{I}&=\mathrm{TopK}\bigl(\mathrm{sim}(\mathbf{q}_b(\mathbf{o}_t),\mathbf{k}_i)\bigr),
+\label{eq:retrieve}\\
+\hat{\mathbf{a}}_i&=\mathcal{D}_b^{(\ell)}\bigl(v_i^{(\ell)},\mathbf{o}_t\bigr)
+\in\mathbb{R}^{H\times d_b},
+\label{eq:decode}
+\end{align}
+where $\mathcal{D}_b^{(\ell)}$ decodes level $\ell$ into the \emph{reader's} action
+space. This shared interface is what makes abstraction level separable from
+injection path. The prior and its injection follow~\cite{rts} unchanged:
+\begin{equation}
+\mathbf{a}_\mathrm{elite}=\sum_{i\in\mathcal{I}}w_i\,\hat{\mathbf{a}}_i,
+\qquad
+\mathbf{x}_{t_0}=(1-t_0)\,\mathbf{a}_\mathrm{elite}+t_0\,\boldsymbol{\epsilon}.
+\label{eq:inject}
+\end{equation}
+
+% >> This sentence is a pre-emptive concession (R2-B1).  Keep it in the body,
+% >> not in a footnote: a ratio of success rates is gameable by abstaining, and
+% >> saying so before a reviewer does converts an attack into a design choice.
+We report $\mathrm{TR}_\ell=\mathrm{SR}^\mathrm{cross}_\ell/
+\mathrm{SR}^\mathrm{same}_\ell$ for context only. A ratio of success rates can be
+driven to one by abstaining more often; we therefore state every claim in
+absolute success rate against each reader's own memoryless base at matched
+initial state, and report the injection rate alongside.
+
+\subsection{What an Entry Is}
+\label{sec:method:entry}
+
+% >> Granularity must be pinned down here or three numbers in Sec. V do not
+% >> typecheck (entries, episodes, bytes).  Segment-level counts are NOT
+% >> comparable to the per-timestep counts used in prior work --- say so.
+An entry is one \emph{motion segment}, delimited by gripper open/close events and
+by zero-crossings of end-effector speed. Segmentation is a state machine over
+signals already present in our corpus; no learned segmenter is used. Mean segment
+length is \todo{L} steps, so a store of \todo{N} entries corresponds to \todo{M}
+episodes; we report both units throughout.
+
+% >> Four-level table.  ATTRIBUTION IS MANDATORY, not optional politeness: three
+% >> of the four levels already have an occupant (idea/threat_RAM_RoboOS.md
+% >> Sec. 14).  Claiming the representation as ours invites a one-line rejection.
+% >>   (1) language          -- no direct occupant
+% >>   (2) object-centric    -- [ram], [roboabc]
+% >>   (3) object-anchored EE-- [dipalo2023] FIRST, then [dinobot]
+% >>   (4) joint-space       -- [vinn]
+% >> The contribution is the shared-protocol side-by-side measurement, plus the
+% >> self-write and frozen-action-expert readout --- never "we propose layering".
+\todo{Table: four value levels --- content, generation, size, prior occupant}
+
+% >> Must be volunteered, not extracted under review (R3-B6): levels (2) and (3)
+% >> share one perception front-end, hence one failure mode.
+Both the object-centric subgoals and the object-anchored deltas require a 6-DoF
+object pose. We obtain it with a detector and tracker before grasp, and with the
+gripper pose itself after grasp, exploiting the rigid attachment; levels~(2)
+and~(3) therefore share a failure mode, and we report them as such.
+
+\subsection{A Body-Agnostic Key and the Alignment Map}
+\label{sec:method:key}
+
+% >> Four key constructions, which double as the Sec. V-A comparison:
+% >>   lang        frozen text encoder over the level-(1) summary.  NO TRAINING.
+% >>               This is the honest floor and the only arm immune to the
+% >>               alignment-map leakage objection (R2-B5).  Do not drop it.
+% >>   vlm-prefix  pooled frozen VLM prefix embedding.
+% >>   obj-rel     object-centric relation encoding; reuse [recap]'s 20-D
+% >>               sign-flip-invariant proprio encoding as the geometric part
+% >>               and CITE it --- saves a tuning round.
+% >>   aligned     vlm-prefix (+) obj-rel through a 2-layer MLP h_b.
+\todo{Key constructions and the alignment map}
+
+The alignment map is trained on weakly paired data---the two bodies performing
+the same task, collected independently rather than in correspondence---on a task
+set $\mathcal{T}_\mathrm{align}$ disjoint from the evaluation tasks
+$\mathcal{T}_\mathrm{eval}$. All main-table numbers use the held-out-task
+protocol; in-domain numbers appear only as an upper bound. The map is the
+\emph{only} component trained by gradient descent, has fewer than 2\,M
+parameters, and trains in \todo{X} GPU-minutes; that figure is the admission cost
+reported in Sec.~\ref{sec:results}.
+
+\subsection{Readout: One Interface, Four Levels}
+\label{sec:method:readout}
+
+% >> THE MECHANISM CONTRIBUTION, and the single design decision that rescues the
+% >> main experiment.  Rationale (R1-B2): [robomme] measures a 14-point SR swing
+% >> from changing the injection mechanism alone (30.68 -> 44.51).  If levels
+% >> (1)(2) went through condition-side injection while (3)(4) went through the
+% >> sampler, Fig. 4 would be uninterpretable --- abstraction and injection path
+% >> would be perfectly confounded.  Collapsing all four onto one path also makes
+% >> "adopted unchanged from [rts]" a TRUE statement (R1-B7).
+Every level is decoded into the reader's action space before injection: level~(1)
+is re-grounded by a frozen VLM in the reader's current image and emits subgoals,
+becoming level~(2); level~(2) is instantiated as object-frame waypoints,
+becoming level~(3); level~(3) is transformed into the reader's task frame and
+solved to a joint-space chunk by differential IK, becoming level~(4); level~(4)
+is used directly. All four therefore enter the same aggregation and the same
+intermediate-state injection of Eq.~\eqref{eq:inject}, so that the level of
+abstraction is varied while the injection path is held fixed.
+
+For same-body reads the highest-fidelity level~(4) is preferred; for cross-body
+reads the readout climbs from~(4) upward until decoding succeeds and the result
+is kinematically feasible. \emph{Which level it lands on is itself an
+experimental reading.}
+
+% >> BOUNDARY DECLARATION.  Verbatim from the outline; do not paraphrase into
+% >> something vaguer.  This paragraph is what lets Reviewer 2 (assumed [rts]
+% >> author) read the paper as building on their work rather than obscuring it.
+For entries decoded into the reader's action space, we adopt the aggregation, the
+intermediate-state initialisation of the flow sampler, the confidence-adaptive
+guidance strength, and the abstain-and-fall-back rule of~\cite{rts} unchanged,
+including its component-aware aggregation of Euclidean, $SO(3)$ and gripper
+components. What is not part of that method, and what we describe here, is the
+decoding path that maps entries at different levels of abstraction into a single
+such action-space prior.
+
+% >> THE ONLY DEFENCE against "layering is redundant, store (4) and derive the
+% >> rest at read time" (R1-B3).  It is an empirical defence, and it can lose.
+% >> Write the losing branch now, while it is cheap:
+% >> if X is within budget AND success rates match, Contribution 2 is restated as
+% >> a protocol/measurement contribution rather than a representation one.
+Levels~(1)--(3) are deterministic functions of level~(4) together with the stored
+frames, so an information-equivalent store could materialise only~(4) and derive
+the rest at read time. The difference is where the cost is paid: deriving
+levels~(1) and~(2) at read time requires a VLM call inside the control loop and
+adds \todo{X}\,ms per retrieval against a budget of \todo{Y}\,ms at the chunk
+boundary.
+
+\subsection{Write Gate and Lifecycle}
+\label{sec:method:lifecycle}
+
+% >> Write gate follows [rts]'s paradigm (score at episode end, keep only the
+% >> prefix up to the progress peak).  Target operating point: high precision,
+% >> low recall --- [rts] reports precision 0.970 / recall 0.678.
+% >> DEPENDENCY: this needs a cross-body progress evaluator.  VLAC weight
+% >> availability is UNVERIFIED (outline Sec. 7, priority 1).  Fallback: implicit
+% >> labels from teleoperation plus a lightweight success classifier.
+\todo{Write gate, decay, capacity bound, entry-level deletion}
+
+% >> Deletion is a SHARED property with [clare], not a selling point.  Saying so
+% >> costs one clause and removes an easy "you claim novelty for what CLARE has".
+% >> The residual-leakage probe was CUT (R2-B13): it is trivially true for an
+% >> explicit entry table.  Rebuttal if asked --- three channels only: the
+% >> alignment-map training set, the index codebook, and per-body-pair confidence
+% >> calibration; ours trains on T_align and contains no deployment entries.
+Entry-level deletion is a property we share with adapter-based
+memories~\cite{clare} rather than a distinguishing one.
+
+\begin{figure}[t]
+  \centering
+  % \includegraphics[width=\columnwidth]{fig2_system}
+  \caption{\textbf{\todo{Fig.~2 System overview}.} A rollout is segmented into
+  motion segments; a write gate admits only progress-verified prefixes, and each
+  admitted segment is stored at four levels of abstraction with a body-agnostic
+  key and a writer tag. At read time, retrieved entries at any level are decoded
+  into the \emph{reader's} action space, so that all levels share one injection
+  path. The shaded block is adopted unchanged from~\cite{rts}.
+  % >> Three panels: (a) Write, (b) Index --- label h_b "trained once, offline,
+  % >> on T_align", (c) Read --- four decoding paths converging into ONE
+  % >> "reader action space" box.  The shading is a graphical non-claim: it makes
+  % >> the borrowed component visible at a glance.
+  }
+  \label{fig:system}
+\end{figure}
+
+\begin{algorithm}[t]
+\caption{Deployment loop for reader body $b$ (policy frozen)}
+\label{alg:deploy}
+\begin{algorithmic}[1]
+\REQUIRE store $\mathcal{M}$, frozen policy $\pi_b$, key encoder $q_b$,
+         alignment map $h_b$
+\FOR{each control step $t$ at a chunk boundary}
+  \STATE $k_q \leftarrow h_b(q_b(o_t))$
+  \STATE $\mathcal{I} \leftarrow \mathrm{TopK}_i\,\mathrm{sim}(k_q,k_i)$;
+         filter by DTW consistency \hfill\COMMENT{\cite{rts}}
+  \IF{$\mathcal{I}=\emptyset$}
+    \STATE $a \leftarrow \pi_b(o_t,\ell)$; \textbf{continue}
+           \hfill\COMMENT{abstain}
+  \ENDIF
+  \STATE $\ell_i \leftarrow$ highest executable level;
+         $\hat a_i \leftarrow \mathcal{D}_b^{(\ell_i)}(v_i,o_t)$
+  \STATE drop $i$ whose retarget/IK fails; abstain if none remain
+  \STATE $a_\mathrm{elite}\leftarrow\sum_i w_i \hat a_i$;
+         $c \leftarrow \alpha\tilde{s}-\beta\sigma_\mathrm{DTW}$
+  \STATE $t_0 \leftarrow t_{\min}+(1-t_{\min})\,\sigma(-\gamma c)$
+  \STATE $a \leftarrow \mathrm{FlowSample}(\pi_b,o_t,\ell,x_{t_0})$
+  \STATE execute $a$; buffer $(k_q,\text{executed chunk})$
+\ENDFOR
+\STATE \textbf{at episode end:} $s\leftarrow\mathrm{WriteGate}(\text{rollout})$
+\IF{$s\geq\eta$}
+  \STATE $\mathcal{M}\leftarrow\mathcal{M}\cup
+         \{e(\sigma,\text{tag}=b)\}_{\sigma\in\mathrm{Seg}(\text{prefix})}$
+\ENDIF
+\end{algorithmic}
+\end{algorithm}
+% >> INSTRUMENTATION: line 5 and line 8 trigger counts give the abstain rate;
+% >> line 11 execution count gives the INJECTION RATE.  Both are required in
+% >> every results cell (Sec. V).  Log them from day one --- retrofitting means
+% >> re-running robot hours.
+
+% >> TWO STORES, kept distinct in every table and caption (R1-B6 / R3-B5).
+% >> Conflating them is what makes "self-written" and "10^4-10^5 entries" look
+% >> mutually exclusive to a reviewer:
+% >>   S_deploy  written by the two robots during evaluation; ~10^3 entries;
+% >>             carries ALL main results and is the sole evidence for self-write.
+% >>   S_corpus  offline-seeded from the existing teleop corpus; 10^4-10^5;
+% >>             used ONLY for scale, interference and P4.  Captions MUST say
+% >>             "corpus-seeded".
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Experimental Setup}
+\label{sec:setup}
+% BUDGET 0.40 page.  Terse.  Anything that can move to Sec. V should move.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% >> PLATFORMS: Franka FR3 (fixed base, 7 DoF) and a mobile manipulator
+% >> (arm + base).  This pair is a clean binary contrast on two axes at once:
+% >> low/high DoF and fixed/moving viewpoint.
+% >> TASK TIERS (R2-B8) --- the two bodies cannot execute the same task set, and
+% >> pretending otherwise is the fastest way to lose the reviewer:
+% >>   S tier  both bodies, base stationary   -- 12 tasks -- THE ONLY confirmatory endpoint
+% >>   M tier  mobile only (navigation)       --  2 tasks -- scope + qualitative video
+% >>   F tier  FR3 only (high stiffness)      --  2 tasks -- scope
+% >> S tier MUST contain >= 3 "not expressible in language" tasks (R1-B4):
+% >> non-semantic trajectory shapes, prescribed contact or velocity profiles
+% >> (patterned wiping, irregular-path pushing, insertion with a feed rhythm).
+% >> Without them the instruction-only control cannot be beaten and Contribution 2
+% >> collapses to "memory is a better prompt".
+\todo{Platforms, task tiers, base policies, store construction}
+
+% >> SIMULATION IS NOT IN THE BODY (Sec. 0.5 cut #5).  Reason to state in one
+% >> sentence: using LIBERO vs. RoboCasa as two bodies changes body, scene,
+% >> assets, cameras, task semantics, demo pipeline and action dimension at once,
+% >> so the body main effect is not identifiable (R2-B2).  Simulation is retained
+% >> internally as a go/no-go and for key-side offline analysis only.
+% >> If the 2x2 factorial (same simulator, second robot model, same scenes) turns
+% >> out to be feasible within one week (gate G3a), it may return as one table.
+
+% >> FOUR THINGS TO VOLUNTEER HERE (Sec. 4.9).  Each is one sentence.  Omitting
+% >> any one of them converts it into a review cycle:
+% >>  1. Both base policies were fine-tuned before deployment on tasks DISJOINT
+% >>     from the memory-evaluation tasks (E0), each on its own body's data only.
+% >>  2. Entry and episode counts and provenance for S_deploy and S_corpus.
+% >>  3. Unit cost of a cross-body trial (body swap + reset) and total robot-hours.
+% >>  4. Single checkpoint, single policy seed; task-level bootstrap substitutes
+% >>     for seed variance, because three seeds is not affordable on hardware.
+\todo{The four disclosures}
+
+% >> REPORTING PROTOCOL --- ~4 lines, governs every cell in every table.
+% >>   SR   success rate, Clopper-Pearson 95% CI
+% >>   D    paired improvement SR(ours) - SR(base) at matched (init state, seed);
+% >>        McNemar with discordant pairs (n01, n10) reported
+% >>   IR   injection rate: fraction of trials in which a prior was injected
+% >>   AR   abstain rate = 1 - IR, split empty-retrieval / gate / IK-infeasible
+% >>   HR   memory-harm rate = n10/n, base succeeds and ours fails
+% >> THREE HARD RULES, no exceptions:
+% >>   (a) every success-rate cell prints IR next to it;
+% >>       any arm with IR < 20% is greyed and marked n.i. (not interpretable).
+% >>   (b) every value level is reported TWICE: "gated" (system reading) and
+% >>       "forced" (gate and DTW filter off, top-1 injected --- memory-content
+% >>       reading).  P1's claim rests on the FORCED column; system-level gain
+% >>       claims rest on the GATED column.  Zero hardware cost, and it is what
+% >>       downgrades the "abstain to win" attack from fatal to answerable.
+% >>   (c) harm rate is likewise reported gated and forced.
+\todo{Reporting protocol}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Results}
+\label{sec:results}
+% BUDGET 2.05 pages.  This is where the review is decided; do not compress it to
+% rescue an earlier section.  Narrative order below is fixed.
+% FIGURE PRIORITY if forced down to four objects:
+%   Table III > Fig. 4 > Fig. 5 > Fig. 3   (Figs. 1 and 2 are outside this rank)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{The Cost of a Reader Swap}
+\label{sec:results:key}
+% >> 0.30 page + Fig. 3.  Four key constructions x {same-session, cross-session,
+% >> cross-viewpoint, cross-body}, plus precision@k / AUC after re-calibration.
+% >> CAPTION MUST CONTAIN, verbatim -- this is the sentence that stops the
+% >> straw-man charge before it is made:
+% >>   "gamma_sim is re-calibrated per condition; the 0.9992 default of [rts] is
+% >>    a coverage/quality knob tuned on LIBERO-10, not a property of the
+% >>    representation."
+% >> PRE-WRITTEN FALLBACK (use it if cross-body precision survives re-calibration
+% >> well above chance): conclude "the key side is recoverable but requires an
+% >> alignment map, whose cost we report".  That reading SUPPORTS the alignment
+% >> map and is a stronger paper than the one where the key side simply fails.
+\todo{V-A}
+
+\subsection{The Transferability Spectrum}
+\label{sec:results:spectrum}
+% >> 0.45 page + Fig. 4, the money figure.  Four levels x {cross, same} x
+% >> {oracle content, automatic content}, gated and forced columns.
+% >> The oracle/automatic split separates what the REPRESENTATION costs from what
+% >> the CONTENT GENERATOR costs.  Justification: [robomme] measures 84.08 -> 32.70
+% >> from swapping only the VLM that writes the content --- 51 points.  Without
+% >> this split the spectrum measures our VLM, not the abstraction level.
+% >> Place derive-on-read and instruction-only side by side here; both are
+% >> controls that can flatten a level, and both must appear in the main table.
+\todo{V-B}
+
+\subsection{Where the Loss Goes}
+\label{sec:results:attribution}
+% >> 0.35 page + Fig. 5.  ORACLE LADDER, five rungs and four differences, fully
+% >> automated -- no post-hoc human failure labelling (that is what makes it
+% >> non-circular, R2-B10):
+% >>   base (no memory)
+% >>     v D_total
+% >>   cross-retrieved (normal cross-body retrieval)
+% >>     v D_key        <- key-side loss
+% >>   retrieval-oracle (force the correct writer entry for this task and phase)
+% >>     v D_retarget   <- retarget / calibration loss
+% >>   retarget-oracle (ground-truth object pose and task frame)
+% >>     v D_value      <- value-side cross-body inexecutability
+% >>   same-body-value (the reader's own entry for the same situation)
+% >> NAMING: call these key-side / value-side TRANSFER LOSS.  Do NOT frame this
+% >> as "retrieval vs. execution" -- [dipalo2023] already decomposed retrieval,
+% >> alignment and replay in this very journal, and the phrasing invites a direct
+% >> collision.  Our non-overlapping ground is the CROSS-BODY condition: with a
+% >> single body, "retrieved correctly but unexecutable by this body" cannot occur.
+% >> Report detector accuracy on both bodies' cameras as a covariate --- levels
+% >> (2) and (3) share that front-end and it must be visible.
+\todo{V-C}
+
+\subsection{Direction}
+\label{sec:results:direction}
+% >> 0.20 page.  P3 by task-level paired sign test, n = 12 (NOT trial-level
+% >> difference-in-differences, whose variance needs ~640 paired trials per
+% >> direction).  All-same-direction gives p ~ 0.0005; 10/12 gives p ~ 0.04.
+% >> P3's power comes from TASK COUNT, not trial count -- if something has to be
+% >> cut, cut trials per task, never tasks.
+% >> MECHANISM: attribute asymmetry to VIEWPOINT VARIABILITY, not workspace
+% >> inclusion (the workspace-subset story is kinematically wrong, R1-B9).
+% >> Key control: lock the mobile base and re-run; if the asymmetry disappears,
+% >> the viewpoint mechanism is established.
+% >> Also report per-writer entry statistics (count, gate-score distribution,
+% >> task coverage) -- unequal write rates are a hidden systematic bias.
+\todo{V-D}
+
+\subsection{Sharing, Scale, and Harm}
+\label{sec:results:sharing}
+% >> 0.35 page + Table IV.  Shared pool has THREE conditions, and P4 is defined
+% >> only on the second (R2-B15):
+% >>   own-body-only pool | shared pool, tag-blind | shared pool, tag-aware
+% >> Entries must be BALANCED across bodies (downsample to min) and the reason
+% >> stated: gate recall ~0.678 and unequal base success rates guarantee unequal
+% >> natural write rates, which would otherwise masquerade as a sharing effect.
+% >> Scale claim must be stated in BOTH units (entries and episodes) and framed
+% >> as a change in WHICH CONSTRAINT BINDS, not as saturation -- [dejavu] is still
+% >> improving monotonically at 1000 episodes (R2-B14).
+\todo{V-E}
+
+\subsection{The Cost of Admitting a Reader}
+\label{sec:results:admission}
+% >> 0.20 page.  Reader #3 = the FR3 with a different gripper, a moved camera and
+% >> one joint locked: a configuration the alignment map and both base fine-tunes
+% >> have never seen, at zero hardware cost.
+% >> Report three measured columns -- paired episodes, GPU-minutes, wall-clock --
+% >> against a RECAP-style target-side fine-tune on the same pair.
+% >> HONESTY REQUIREMENT (do not quietly drop): describe it as "a modified
+% >> fixed-base configuration unseen by the alignment map", NOT as a third
+% >> embodiment, and state that the admission cost is a LOWER BOUND.
+% >> The O(T*B) -> O(1) complexity argument is DELETED; a measured table replaces
+% >> it, because the asymptotic version was self-defeating (R1-B5).
+% >> E5 (recency crossover) lands here too: three lines, three numbers -- the
+% >> point at which a memory beats waiting for the next co-training cycle.  This
+% >> is the empirical answer to "why not just co-train".
+\todo{V-F}
+
+% >> MAIN TABLE spans V-B and V-D.
+\todo{Table III --- real-robot main results: paired Delta vs. each body's own
+memoryless base, with injection rate and harm rate in every cell}
+% >> Real-robot conditions are limited to four (R2-B11 / R3-B7):
+% >>   frozen base (no memory) | ours @ L* | ours @ level (4) | reimplemented [rts]
+% >> plus ER / co-train upper bound, derive-on-read and instruction-only on a
+% >> 4-task subset.
+% >> STRUCTURAL EXCLUSION, state it in the body rather than running a crippled
+% >> version -- this is both more honest and saves tens of robot-hours:
+% >>   "We do not run [recap] on our hardware: it requires paired demonstrations
+% >>    on a fixed task distribution, which our independently collected corpus
+% >>    does not provide, and running it under assumptions it does not make would
+% >>    not be informative.  [dejavu]'s experience-feedback network is trained
+% >>    with reinforcement learning per backbone; [clare] and [vlapro] address
+% >>    continual task acquisition rather than reader swap.  We position all four
+% >>    in Table I instead."
+% >> FIDELITY GATE for the [rts] reimplementation -- must pass BEFORE it is used
+% >> as a comparison: reproduce 92.4 -> 94.4 on pi0.5 + LIBERO-10 (their reported
+% >> std is 0.2-0.8).  Four hyperparameters are unspecified in the original
+% >> (t_min, evaluation interval, DTW rejection threshold, action horizon H).
+% >> If reproduction falls outside noise, label it "our reimplementation" and
+% >> make NO claim of outperforming it.
+% >> One controlled-comparison sentence worth its space:
+% >>   "The same-body retrieval baseline shares our injection implementation and
+% >>    differs only in key construction and value level, so the comparison
+% >>    isolates what is stored."
+
+\todo{Table IV --- ablations: six control arms and the three sharing conditions}
+% >> Control arms.  A1 and A2 are NOT optional: without them the entire effect is
+% >> explainable as "injection reduces sampling variance" (R2-B9), and t_0 sits
+% >> around 0.6, so roughly 60% of the noise survives -- that alternative
+% >> explanation is genuinely competitive.
+% >>   A1 random-entry      -- gain comes from injection, not from content
+% >>   A2 self-prior        -- pure variance reduction (base's own mean chunk)
+% >>   A3 fixed-t0, no gate -- isolates "gate falls back to base"
+% >>   A4 wrong-body/task   -- negative control
+% >>   A5 replay-only       -- retarget and execute open-loop.  Mirrors [recap]'s
+% >>                           Retrieval Only and [dejavu]'s kNN-RAG, which they
+% >>                           report "often degrades performance".  Omitting this
+% >>                           WILL be named by a reviewer.
+% >>   A6 retarget oracle   -- separates IK/calibration failures from the rest
+% >> Crossover arms X1/X2 (simulation, 4 tasks) estimate the injection-path main
+% >> effect so it can be subtracted from the P1 curve.  If they cannot be run,
+% >> P1 must be restated as a claim about "level + path" jointly, not level alone.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Conclusions and Limitations}
+\label{sec:conclusion}
+% BUDGET 0.15 page.  Limitations are NOT a formality here; three of them are
+% known and unresolved, and burying them invites discovery under review.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% >> STATE PLAINLY, all three:
+% >>  1. n = 2 bodies.  Two bodies cannot support a general law about embodiment.
+% >>     Licensed phrasing: "a spectrum measured on this pair".  No technical fix.
+% >>  2. Reader #3 is a modified FR3, not a third morphology; its admission cost
+% >>     is a lower bound.
+% >>  3. Absolute success rates in this regime may be low.  Plot the frozen-base
+% >>     floor in every figure so the comparison stays legible.  Reference points:
+% >>     [recap] real-robot close-cabinet 30%; [robomme] best method 44.51% vs
+% >>     human 90.5%.
+% >> IF THE PREDICTIONS FAIL, the paper still stands but changes shape -- decide
+% >> which shape at gates G4/G5, not during the rebuttal:
+% >>   P1 refuted (cross-body also falls with abstraction) -> merge with P2 into a
+% >>     tighter attribution paper; Fig. 5 carries the weight.
+% >>   P2 refuted (value term dominates) -> "retrieval is fixable, actions are
+% >>     not"; level (3) becomes the only viable level and hierarchical fallback
+% >>     becomes the centre of the paper.
+% >>   P3 refuted -> report "no directional asymmetry at this power" with the
+% >>     power calculation; does not damage the main line.
+% >>   P4 refuted (all levels net positive) -> a BETTER result: sharing is free
+% >>     at this scale.  Rewrite as "we observed no cross-body interference".
+% >> Retitle for the negative case: "Why a Robot's Action Memory Does Not Transfer
+% >> Across Bodies: A Layered Measurement".
+\todo{Conclusions and limitations}
+
+% Balance last-page columns if needed (adjust as content grows):
+% \addtolength{\textheight}{-12cm}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Optional for camera-ready only (omitted under double-blind):
+% \section*{ACKNOWLEDGMENT}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% refs.bib currently holds 32 entries, every one verified against the arXiv Atom
+% API on 2026-08-22.  Budget is ~40; pack same-family citations in the text
+% rather than adding entries.  Do not add a reference without running the check.
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+
+\end{document}
+
+

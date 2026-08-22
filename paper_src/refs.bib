@@ -1,0 +1,309 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Bibliography
+% Cross-Body Readability of Persistent Action Memory
+%
+% PROVENANCE: every entry below was verified against the arXiv Atom API
+% (https://export.arxiv.org/api/query?id_list=...) on 2026-08-22.  Titles,
+% author lists and venue lines are copied from that response, not recalled.
+% Do NOT add an entry without running the same check --- v3 of this project
+% shipped three fabricated venues.
+%
+% COVERAGE: 32 entries, 16 currently cited.  The other 16 appear only inside
+% "% >>" writing instructions in root.tex and will be cited as those paragraphs
+% are written; they are not dead weight.  BibTeX only emits what is cited, so
+% the uncited half costs zero pages today.
+%
+% PAGE BUDGET: ~40 entries.  Before submission, pack same-family citations
+% (\cite{a,b,c}) rather than listing each separately in the text.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% ============================================================================
+% I. Base policies and datasets
+% ============================================================================
+
+@article{pi0,
+  author  = {Kevin Black and Noah Brown and Danny Driess and others},
+  title   = {{$\pi_0$}: A Vision-Language-Action Flow Model for General Robot Control},
+  journal = {arXiv preprint arXiv:2410.24164},
+  year    = {2024}
+}
+
+@article{pi05,
+  author  = {{Physical Intelligence} and Kevin Black and Noah Brown and others},
+  title   = {{$\pi_{0.5}$}: A Vision-Language-Action Model with Open-World Generalization},
+  journal = {arXiv preprint arXiv:2504.16054},
+  year    = {2025}
+}
+
+@inproceedings{openvla,
+  author    = {Moo Jin Kim and Karl Pertsch and Siddharth Karamcheti and others},
+  title     = {{OpenVLA}: An Open-Source Vision-Language-Action Model},
+  booktitle = {Conference on Robot Learning (CoRL)},
+  year      = {2024},
+  note      = {arXiv:2406.09246}
+}
+
+@article{openx,
+  author  = {{Open X-Embodiment Collaboration} and Abby O'Neill and Abdul Rehman and others},
+  title   = {Open {X-Embodiment}: Robotic Learning Datasets and {RT-X} Models},
+  journal = {arXiv preprint arXiv:2310.08864},
+  year    = {2023}
+}
+
+% ============================================================================
+% II. Benchmarks
+% ============================================================================
+
+@inproceedings{libero,
+  author    = {Bo Liu and Yifeng Zhu and Chongkai Gao and Yihao Feng and others},
+  title     = {{LIBERO}: Benchmarking Knowledge Transfer for Lifelong Robot Learning},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2023},
+  note      = {arXiv:2306.03310}
+}
+
+@inproceedings{robocasa,
+  author    = {Soroush Nasiriany and Abhiram Maddukuri and Lance Zhang and others},
+  title     = {{RoboCasa}: Large-Scale Simulation of Everyday Tasks for Generalist Robots},
+  booktitle = {Robotics: Science and Systems (RSS)},
+  year      = {2024},
+  note      = {arXiv:2406.02523}
+}
+
+@inproceedings{robomme,
+  author    = {Yinpei Dai and Hongze Fu and Jayjun Lee and Yuejiang Liu and others},
+  title     = {{RoboMME}: Benchmarking and Understanding Memory for Robotic Generalist Policies},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  year      = {2026},
+  note      = {arXiv:2603.04639}
+}
+
+% ============================================================================
+% III. Retrieval-augmented frozen policies -- the direct foundation, not competitors
+% ============================================================================
+
+@article{rts,
+  author  = {Jianchao Zhao and Huoren Yang and Yusong Hu and Yuyang Gao and others},
+  title   = {Retrieve-then-Steer: Online Success Memory for Test-Time Adaptation of Generative {VLAs}},
+  journal = {arXiv preprint arXiv:2605.10094},
+  year    = {2026}
+}
+
+@article{recap,
+  author  = {Jeongeun Park and Juhan Park and Taekyung Kim and Sungjoon Choi and others},
+  title   = {Retrieve, Don't Retrain: Extending Vision Language Action Models to New Tasks at Test Time},
+  journal = {arXiv preprint arXiv:2606.15631},
+  year    = {2026}
+}
+
+@article{dejavu,
+  author  = {Shaokai Wu and Yanbiao Ji and Qiuchang Li and Zhiyi Zhang and others},
+  title   = {Dejavu: Towards Experience Feedback Learning for Embodied Intelligence},
+  journal = {arXiv preprint arXiv:2510.10181},
+  year    = {2025}
+}
+
+@inproceedings{roboharness,
+  author    = {Zhuoran Li and Zhiyang Li and Kaijun Zhou and Jinyu Gu},
+  title     = {{RoboHarness}: A Memory-Augmented Policy Harness for Vision-Language-Action Model
+               Robustness via In-Context Adaptation},
+  booktitle = {IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)},
+  year      = {2026},
+  note      = {arXiv:2603.24060}
+}
+
+@article{vlapro,
+  author  = {Shengyu Si and Yuanzhuo Lu and Ruimeng Yang and Ziyi Ye and others},
+  title   = {{VLA-Pro}: Cross-Task Procedural Memory Transfer for Vision-Language-Action Models},
+  journal = {arXiv preprint arXiv:2605.29562},
+  year    = {2026}
+}
+
+% ============================================================================
+% IV. Retrieve–align–replay lineage  — occupies value levels (2) and (3).
+%     Cite ALL of these when introducing the layered value; the outline's
+%     four-level table attributes (2) to RAM/Robo-ABC and (3) to dipalo2023.
+% ============================================================================
+
+@inproceedings{ram,
+  author    = {Yuxuan Kuang and Junjie Ye and Haoran Geng and Jiageng Mao and others},
+  title     = {{RAM}: Retrieval-Based Affordance Transfer for Generalizable Zero-Shot Robotic Manipulation},
+  booktitle = {Conference on Robot Learning (CoRL)},
+  year      = {2024},
+  note      = {arXiv:2407.04689}
+}
+
+@article{roboabc,
+  author  = {Yuanchen Ju and Kaizhe Hu and Guowei Zhang and Gu Zhang and others},
+  title   = {{Robo-ABC}: Affordance Generalization Beyond Categories via Semantic Correspondence
+             for Robot Manipulation},
+  journal = {arXiv preprint arXiv:2401.07487},
+  year    = {2024}
+}
+
+@article{dipalo2023,
+  author  = {Norman Di Palo and Edward Johns},
+  title   = {On the Effectiveness of Retrieval, Alignment, and Replay in Manipulation},
+  journal = {IEEE Robotics and Automation Letters},
+  year    = {2024},
+  note    = {Accepted December 2023; arXiv:2312.12345}
+}
+
+@inproceedings{dinobot,
+  author    = {Norman Di Palo and Edward Johns},
+  title     = {{DINOBot}: Robot Manipulation via Retrieval and Alignment with Vision Foundation Models},
+  booktitle = {IEEE International Conference on Robotics and Automation (ICRA)},
+  year      = {2024},
+  note      = {arXiv:2402.13181}
+}
+
+@article{vinn,
+  author  = {Jyothish Pari and Nur Muhammad Shafiullah and Sridhar Pandian Arunachalam and Lerrel Pinto},
+  title   = {The Surprising Effectiveness of Representation Learning for Visual Imitation},
+  journal = {arXiv preprint arXiv:2112.01511},
+  year    = {2021},
+  note    = {TODO: venue NOT verified as of 2026-08-22 --- do not label RSS/CoRL without checking}
+}
+
+@article{ag2manip,
+  author  = {Puhao Li and Tengyu Liu and Yuyang Li and Muzhi Han and others},
+  title   = {{Ag2Manip}: Learning Novel Manipulation Skills with Agent-Agnostic Visual and
+             Action Representations},
+  journal = {arXiv preprint arXiv:2404.17521},
+  year    = {2024}
+}
+
+% ============================================================================
+% V. Retrieval that produces gradients (contrast class: experience -> weights)
+% ============================================================================
+
+@inproceedings{behaviorretrieval,
+  author    = {Maximilian Du and Suraj Nair and Dorsa Sadigh and Chelsea Finn},
+  title     = {Behavior Retrieval: Few-Shot Imitation Learning by Querying Unlabeled Datasets},
+  booktitle = {Robotics: Science and Systems (RSS)},
+  year      = {2023},
+  note      = {arXiv:2304.08742}
+}
+
+@inproceedings{strap,
+  author    = {Marius Memmel and Jacob Berg and Bingqing Chen and Abhishek Gupta and others},
+  title     = {{STRAP}: Robot Sub-Trajectory Retrieval for Augmented Policy Learning},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2025},
+  note      = {arXiv:2412.15182}
+}
+
+@inproceedings{flowretrieval,
+  author    = {Li-Heng Lin and Yuchen Cui and Amber Xie and others},
+  title     = {{FlowRetrieval}: Flow-Guided Data Retrieval for Few-Shot Imitation Learning},
+  booktitle = {Conference on Robot Learning (CoRL)},
+  year      = {2024},
+  note      = {arXiv:2408.16944}
+}
+
+% ============================================================================
+% VI. Memory written into parameters (revocable, but body-bound)
+% ============================================================================
+
+@article{clare,
+  author  = {Ralf R\"omer and Yi Zhang and Yuming Li and Angela P. Schoellig},
+  title   = {{CLARE}: Continual Learning for Vision-Language-Action Models via Autonomous
+             Adapter Routing and Expansion},
+  journal = {IEEE Robotics and Automation Letters},
+  year    = {2026},
+  note    = {arXiv:2601.09512}
+}
+
+@inproceedings{liu2026forgetting,
+  author    = {Huihan Liu and Changyeon Kim and Bo Liu and Minghuan Liu and others},
+  title     = {Pretrained Vision-Language-Action Models are Surprisingly Resistant to Forgetting
+               in Continual Learning},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  year      = {2026},
+  note      = {arXiv:2603.03818}
+}
+
+@article{infovla,
+  author  = {Libang Zhao and Qixin Zeng and Hongyin Zhang and Donglin Wang},
+  title   = {Information-Theoretic Constraints for Continual Vision-Language-Action Alignment},
+  journal = {arXiv preprint arXiv:2603.13335},
+  year    = {2026}
+}
+
+% ============================================================================
+% VII. Memory that ends with the episode
+% ============================================================================
+
+@inproceedings{memoryvla,
+  author    = {Hao Shi and Bin Xie and Yingfei Liu and Lin Sun and others},
+  title     = {{MemoryVLA}: Perceptual-Cognitive Memory in Vision-Language-Action Models
+               for Robotic Manipulation},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2026},
+  note      = {arXiv:2508.19236}
+}
+
+@article{mem,
+  author  = {Marcel Torne and Karl Pertsch and Homer Walke and Kyle Vedder and others},
+  title   = {{MEM}: Multi-Scale Embodied Memory for Vision Language Action Models},
+  journal = {arXiv preprint arXiv:2603.03596},
+  year    = {2026}
+}
+
+% ============================================================================
+% VIII. Cross-body but volatile (in-context), and cross-body but non-action
+% ============================================================================
+
+@article{robottt,
+  author  = {Yunfan Jiang and Yevgen Chebotar and Ruijie Zheng and others},
+  title   = {{RoboTTT}: Context Scaling for Robot Policies},
+  journal = {arXiv preprint arXiv:2607.15275},
+  year    = {2026}
+}
+
+@article{mimicdroid,
+  author  = {Rutav Shah and Shuijing Liu and Qi Wang and others},
+  title   = {{MimicDroid}: In-Context Learning for Humanoid Robot Manipulation from Human Play Videos},
+  journal = {arXiv preprint arXiv:2509.09769},
+  year    = {2025}
+}
+
+@article{roboos,
+  author  = {Huajie Tan and Xiaoshuai Hao and Cheng Chi and Minglan Lin and others},
+  title   = {{RoboOS}: A Hierarchical Embodied Framework for Cross-Embodiment and
+             Multi-Agent Collaboration},
+  journal = {arXiv preprint arXiv:2505.03673},
+  year    = {2025}
+}
+
+% ============================================================================
+% IX. Episodic control lineage (expected reviewer comparison)
+% ============================================================================
+
+@inproceedings{mfec,
+  author    = {Charles Blundell and Benigno Uria and Alexander Pritzel and others},
+  title     = {Model-Free Episodic Control},
+  booktitle = {arXiv preprint arXiv:1606.04460},
+  year      = {2016}
+}
+
+@inproceedings{nec,
+  author    = {Alexander Pritzel and Benigno Uria and Sriram Srinivasan and others},
+  title     = {Neural Episodic Control},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  year      = {2017},
+  note      = {arXiv:1703.01988}
+}
+
+% ============================================================================
+% X. Descriptive framing only — NOT a novelty claim (outline: <=3 sentences)
+% ============================================================================
+
+@inproceedings{miras,
+  author    = {Ali Behrouz and Meisam Razaviyayn and Peilin Zhong and Vahab Mirrokni},
+  title     = {It's All Connected: A Journey Through Test-Time Memorization, Attentional Bias,
+               Retention, and Online Optimization},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2026},
+  note      = {arXiv:2504.13173}
+}
