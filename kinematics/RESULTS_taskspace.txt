@@ -1,0 +1,25 @@
+==============================================================================
+0. TASK BOX ACCEPTANCE (how selective the home-manipulation workspace is)
+   right arm: 1500 accepted / 32030 sampled  (4.68% of joint space)
+==============================================================================
+1. LAYER-3 (task-frame EE pose) RETARGET Piper->PiperX, INSIDE TASK BOX
+   full 6-DoF pose, gripper-mount 90deg CORRECTED : 80.8%
+   full 6-DoF pose, 90deg NOT corrected           : 67.2%
+   position only (orientation free)               : 100.0%
+   residual pos error on failures: median 0.23 cm, p90 0.69 cm
+==============================================================================
+2. LAYER-4 (raw joint chunk) NAIVE COPY Piper->PiperX, INSIDE TASK BOX
+   joint-limit violation rate : 9.2%
+   TCP position error  median 24.99 cm   p90 32.67 cm
+   TCP ORIENTATION err median 87.5 deg   p90 131.3 deg
+   -- best-fit per-joint affine retarget q'=s*q+b (fit on FK-matched pairs):
+      copy j1-j3 + freely re-solve j4-j6: residual orientation err median 6.7 deg
+==============================================================================
+3. DUAL-ARM RETARGET: per-arm independent vs cooperative (T_rel preserved)
+   bimanual cooperating samples: 250  (hand separation 10-60 cm)
+   (a) per-arm independent, BOTH arms feasible      : 77.6%
+       relative-pose error when forced (clipped IK) : pos median 0.06 cm, rot median 0.0 deg
+   (b) cooperative (T_rel hard, pair free in SE(3)) : 93.6%
+==============================================================================
+
+[exited with code 0]

@@ -1,9 +1,22 @@
-# 跨本体持久动作记忆 — IEEE RA-L 最终写作大纲 v1（施工图）
+# 跨本体持久动作记忆 — IEEE RA-L 最终写作大纲 v1.1（施工图）
 
-生成日期：2026-08-22
-上游依据：`vla_memory_cl_feasibility_v4.md`（规格书）、`review_v3_critique.md`、`threat_RAM_RoboOS.md`、三位审稿人对四节大纲的对抗意见、以及 RoboMME / Retrieve-then-Steer / RECAP / Dejavu 四篇一手 PDF 精读记录。
+生成日期：2026-08-22 · **最后更新：2026-08-24（按 v5 §9 补丁清单 + 硬件答复 + demo 规划）**
+上游依据：**`vla_memory_cl_feasibility_v5.md`（现行规格书，优先级高于 v4）**、`vla_memory_cl_feasibility_v4.md`、`review_v3_critique.md`、`threat_RAM_RoboOS.md`、三位审稿人对四节大纲的对抗意见、以及 RoboMME / Retrieve-then-Steer / RECAP / Dejavu 四篇一手 PDF 精读记录、`RAL2027/kinematics/` 的一手运动学复算。
 
 **本文档的用法**：这是施工图，不是 idea 描述。每一节的每一条要么是可执行的写作/实验指令，要么是可验证的断言。凡标 **【待确认】** 的，写进论文前必须有一手证据。
+
+> ## ⚠️ 2026-08-24 硬件变更：本体已从 FR3 + 移动臂 改为 双臂 Piper ↔ 双臂 PiperX
+>
+> 全文凡出现 `Franka FR3` / `移动臂` / `mobile manipulator` / `锁底盘` 的地方均已作废或改写。**若下文某处仍残留旧本体名，以 v5 为准。**
+>
+> **已确认的硬件事实**（v5 §1.6，用户 2026-08-24 答复）：
+> - ✅ PiperX 是**官方 `piper_x`**（偏置腕 UR 型）→ "different kinematic family" 可写，谱系不会反转成压平
+> - ✅ **无腕部力/触觉通道**，但**拉链任务已训练成功、数据可用** → 拉链**保留**在 confirmatory（③层用抓后夹爪位姿代理＝本体感觉，成功判据在释放回 home 后的静止帧上测，两处都绕开了触觉文献里的遮挡机理）
+> - ⚠️ **两台夹爪不同款** → **§4.7 之前所有可行率数字必须用实测 TCP 偏置重算**；同时这使 embodiment 阶梯的"换夹爪"档变成免费且原生
+> - ⚠️ **铰链未做标定**，目前直接用采集动作训练 → 需确认家电采集期间是否移动过；未移动则可**追溯标定**（存量数据零重采变③层可用）
+> - ✅ HuggingFace 可达（VLAC 路径确认）；✅ JAX 在 5090 推理可跑（训练待实测）
+> - ✅ 数据可用性已由专职采集团队验证，**不再是风险项**
+
 
 ---
 
@@ -23,34 +36,39 @@
 
 ## 0.2 摘要中文译稿（对应英文约 195 词，含全部限定词）
 
-> 一个在部署过程中持续改进的机器人，必须把它学到的内容存放在某处。检索增强的冻结 vision-language-action (VLA) policies 已经能够在不进行梯度更新的情况下累积部署经验，跨本体检索池也已经存在。但尚未被展示的是这样一种持久存储：其中包含由机器人在其**自身部署过程中**写入的*可执行动作内容*，并且能够被**第二个同样处于部署中的机器人**读取，而其 policy **不再进行任何进一步更新**。我们追问：要实现这一点，一条经验必须包含什么内容。每条经验以四个抽象层级写入——可重新 grounding 的语言摘要、以对象为中心的子目标序列、以对象锚定的末端执行器增量，以及关节空间动作 chunk——这些内容存储在一个带有学习得到对齐映射的、与身体无关的 key 之下；并且每一层都会在注入到读者的冻结 flow-matching sampler 之前，被解码到读者自身的动作空间中。一个固定底座的 Franka FR3 和一个移动操作机器人都对同一个存储进行双向写入与读取。我们报告四个层级上的可迁移性谱系，将跨本体损失分解为 key 侧、retargeting 侧和 value 侧三部分，并报告每次试验的 memory-harm rate 与使这些数字具有可解释性的 injection rate。接纳第三个此前未见过的 reader 的代价为 \todo{N} 个配对 episodes 和 \todo{M} GPU-minutes，且不需要任何 policy gradient。
+> 一个在部署过程中持续改进的机器人，必须把它学到的内容存放在某处。检索增强的冻结 vision-language-action (VLA) policies 已经能够在不进行梯度更新的情况下累积部署经验，跨本体检索池也已经存在。但尚未被展示的是这样一种持久存储：其中包含由机器人在其**自身部署过程中**写入的*可执行动作内容*，并且能够被**第二个同样处于部署中的、属于不同运动学族的机器人**读取，而其 policy **不再进行任何进一步更新**。我们追问：要实现这一点，一条经验必须包含什么内容。每条经验以四个抽象层级写入——可重新 grounding 的语言摘要、以对象为中心的子目标序列、**锚点系下的接触点运动并显式拆出 (T_abs, T_rel)**，以及关节空间动作 chunk——这些内容存储在一个带有学习得到对齐映射的、与身体无关的 key 之下；并且每一层都会在注入到读者的冻结 flow-matching sampler 之前，被解码到读者自身的动作空间中。**两个已部署的双臂平台——球形手腕的 Piper 与偏置手腕的 PiperX，DoF、负载、重复精度全同，臂展相差 6.9%——对同一个存储进行双向写入与读取。** 我们报告四个层级上的可迁移性谱系，将跨本体损失分解为 **key 侧、限位包络、架构与 value 侧四部分**，并报告每次试验的 memory-harm rate 与使这些数字具有可解释性的 injection rate。接纳第三个此前未见过的 reader 的代价为 \todo{N} 个配对 episodes 和 \todo{M} GPU-minutes，且不需要任何 policy gradient。
 
 **Abstract 写作红线**：
 - 不得出现 first / novel / unexplored / we fill the gap。
-- 必须出现的三个限定词：*executable action content*、*during its own deployment*、*no further update to its policy*。少一个，Table I 里的 RoboOS 或 RAM 或 RECAP 就是反例。
+- 必须出现的**四个**限定词：*executable action content*、*during its own deployment*、*no further update to its policy*、***of a different kinematic family***。少一个，Table I 里的 RoboOS 或 RAM 或 RECAP 或 R-t-S 就是反例。
+  - **第四个限定词的写法取决于 v5 §1.6 #1**：已确认为官方 `piper_x`（偏置腕）→ 用 `of a different kinematic family`。
 - 必须出现 injection rate —— 这是主动交出“transfer rate 可被弃权刷高”这一击（Reviewer #2 R2-B1）。
 
 ## 0.3 故事线（3 句话）
 
-1. 检索增强的冻结 VLA 已经跑通，跨本体检索池也已经存在（RECAP：人手/UR5 写、机器人读；RAM：660 条离线 affordance 库被两种本体读）——这些都不是我们要论证的东西。
-2. 但没有一个**由部署中的机器人自己写下的、含可执行动作内容的持久库**被第二具**同样在部署中的**机器人**不经任何策略梯度**读过：换读者要么付一次 target 侧微调（RECAP 摘要自陈），要么条目本身就是权重（CLARE / VLA-Pro），要么跨过身体的根本不是动作（RoboOS 自陈其 shared memory 无动作内容）。
-3. 我们把每条经验同时写在四个抽象层级上、用一张一次性训练的对齐图索引、在读出时一律解码回读者自己的动作空间，然后在两台**都在部署中**的机器人（FR3 与移动臂）之间双向读写同一个库，测出哪一层扛得住换身体、以及跨本体损失中有多少来自检索、多少来自 retarget、多少来自动作本身不可用。
+1. 检索增强的冻结 VLA 已经跑通，跨本体检索池也已经存在（RECAP：人手/UR5 写、机器人读；RAM：660 条离线 affordance 库被两种本体读）——**而且冻结 π0.5 + 持久成功记忆已经被证明能在双臂 AgileX PiPER 上帮助叠 T 恤（R-t-S 附录 D，42.0→50.0，每任务 50 trials）**——这些都不是我们要论证的东西。
+2. 但没有一个**由部署中的机器人自己写下的、含可执行动作内容的持久库**被第二具**同样在部署中的、属于不同运动学族的**机器人**不经任何策略梯度**读过：换读者要么付一次 target 侧微调（RECAP 摘要自陈），要么条目本身就是权重（CLARE / VLA-Pro），要么跨过身体的根本不是动作（RoboOS 自陈其 shared memory 无动作内容），要么读者就是写者本人（R-t-S / Dejavu）。
+3. 我们把每条经验同时写在四个抽象层级上、用一张一次性训练的对齐图索引、在读出时一律解码回读者自己的动作空间，然后在两台**都在部署中**的双臂机器人（球腕 Piper 与偏置腕 PiperX）之间双向读写同一个库，测出**两条曲线在哪一层交叉**、以及跨本体损失中有多少来自检索、多少来自限位包络、多少来自架构、多少来自动作本身不可用；**并给出一个纯离线的运动学统计量，它能预测迁移不对称的方向与逐任务排序。**
+
 
 ## 0.4 四条贡献（中文译稿）
 
 > **1) 我们以无阈值的方式量化 reader 置换对检索记忆造成的代价。**
 > 我们在四种 key 构造下测量同本体查询与跨本体查询的检索质量，基于我们自己的 (task, phase) 标注导出的正样本对定义，报告 precision@k 和 ROC-AUC，并进一步报告跨本体 reader 为达到与同本体 reader 相同精度所必须付出的 recall 代价（等价地，也就是 abstention 代价）。我们有意避免基于任何单一系统的默认相似度 gate 来论证：最先进同本体 retriever 的 gate 值是每次部署中的权衡旋钮，而不是表征本身的性质，并且其自身的敏感性研究表明，该方法在这一取值范围上几乎是平坦的。
 
-> **2) 我们使一条经验的可迁移性成为一个可以通过实验分离的变量。**
-> 一次收集在共享 key 之下为每个条目生成四个 value 层级，并且关键在于，它们共享同一个 readout 接口：每一层都被解码到 reader 的动作空间，并在同一个冻结 sampler 的同一位置注入，因此在保持注入路径固定的同时，只改变抽象层级。我们对每一层同时报告 oracle 内容与自动生成内容，从而将表征本身的代价与内容生成器的代价区分开来；同时，我们还与一种 derive-on-read 存储进行比较，该存储只物化最低层级，并在读取时重建其余层级。
+> **2) 我们使一条经验的可迁移性成为一个可以通过实验分离的变量，并把主张收窄到交叉点。**
+> 一次收集在共享 key 之下为每个条目生成四个 value 层级，并且关键在于，它们共享同一个 readout 接口：每一层都被解码到 reader 的动作空间，并在同一个冻结 sampler 的同一位置注入，因此在保持注入路径固定的同时，只改变抽象层级。**我们报告的不是"一条谱系"，而是一个交叉点：同本体保真度与跨本体可迁移性发生权衡的那一层。** 我们对每一层同时报告 oracle 内容与自动生成内容，从而将表征本身的代价与内容生成器的代价区分开来；同时，我们还与一种 derive-on-read 存储进行比较，该存储只物化最低层级，并在读取时重建其余层级。
+> **为什么必须收窄到交叉点**：单调"越抽象越可迁移"不是 finding——GR00T N1.7 的 README 已用自己的话主张过（relative EEF action space 是 "a key factor in the model's cross-embodiment performance"）。**没有哪一层永远最好，这才是"谱系"而不是"层级排序"。**
 
 > **3) 我们报告了一个由两个已部署本体共享、双向写入和读取的持久动作存储，并且一旦部署完成，就没有梯度会到达任何一个 policy。**
-> 每个本体的基础 policy 都只在部署前 fine-tuned 一次，所用任务与记忆评估任务互不相交；当存储被接入时，或当它持续增长时，都不会进行任何更新。我们进一步接纳第三个此前未见过的 reader 本体，并以配对 episodes 和 GPU-minutes 报告其接入成本，同时给出在同一对本体上进行按本体 target-side fine-tune 的成本。我们报告每次试验的 memory-harm rate——即在初始状态匹配且 sampler 噪声匹配的配对试验中，存储使 reader 的表现劣于其无记忆基础版本的比例——以及对其进行条件化解释的 injection rate。
+> 每个本体的基础 policy 都只在部署前 fine-tuned 一次，所用任务与记忆评估任务互不相交；当存储被接入时，或当它持续增长时，都不会进行任何更新。我们进一步接纳第三个此前未见过的 reader 本体（**单臂模式读者：动作维度 14→7，`T_rel` 字面消失**），并以配对 episodes 和 GPU-minutes 报告其接入成本，同时给出在同一对本体上进行按本体 target-side fine-tune 的成本。我们报告每次试验的 memory-harm rate——即在初始状态匹配且 sampler 噪声匹配的配对试验中，存储使 reader 的表现劣于其无记忆基础版本的比例——以及对其进行条件化解释的 injection rate。
 
 > **4) 我们分解跨本体损失并刻画一个共享存储。**
-> 一个 oracle 阶梯将同本体 reader 与跨本体 reader 之间的差距归因到三个可加项——检索、retargeting 和 value 不可执行性——而无需对失败进行事后人工标注。在一个由语料预填充、跨任务与跨本体共享、包含 \todo{1e4–1e5} 个条目（\todo{N} episodes）的存储上，我们表明真正的约束项是检索精度与跨本体干扰，而不是容量。
+> 一个 oracle 阶梯将同本体 reader 与跨本体 reader 之间的差距归因到**四个可加项——检索、限位包络、几何/架构，以及 value 不可执行性**——而无需对失败进行事后人工标注。**（离线实测：限位项 19.2 pt，几何项 0.0 pt——两者机理不同，不得合并叙述。）** **预注册的负值处理**：若任一 Δ < 0，禁止画堆叠柱状图，改画阶梯折线并在正文声明"这是一串干预，不是方差分解"。在一个由语料预填充、跨任务与跨本体共享、包含 \todo{10⁴–N_max}（**明写 N_max，不硬凑 10⁵**）个条目（\todo{N} episodes）的存储上，我们表明真正的约束项是检索精度与跨本体干扰，而不是容量。
 
-> **我们明确不主张**：向 flow-matching sampler 注入中间状态、置信度自适应的 guidance 强度、低置信度时 abstain-on-low-confidence 的回退机制，或对检索到的 chunks 进行 component-aware aggregation——这些都采纳自 Retrieve-then-Steer [R-t-S]，并且一旦某个 entry 被解码到 reader 的动作空间后即不加修改地使用。我们也不主张 retrieval pool 的无梯度增长，这一点已由 RECAP 证明；也不主张 entry-level 的可撤销性，这一点已由 CLARE 证明。
+> **我们明确不主张**：向 flow-matching sampler 注入中间状态、置信度自适应的 guidance 强度、低置信度时 abstain-on-low-confidence 的回退机制，或对检索到的 chunks 进行 component-aware aggregation——这些都采纳自 Retrieve-then-Steer [R-t-S]，并且一旦某个 entry 被解码到 reader 的动作空间后即不加修改地使用。**我们同时指出，带软逐元素掩码的中间态注入在 GR00T N1.7 的 real-time chunking 中也有工业实现（`vel_strength` + 指数 ramp），这进一步支持"注入机制不是本文贡献"这一立场。** 我们也不主张 retrieval pool 的无梯度增长，这一点已由 RECAP 证明；也不主张 entry-level 的可撤销性，这一点已由 CLARE 证明。
+> **但我们确实主张一项额外的机制增量**：**双臂条目在聚合之前的坐标变换**——先把每条候选从 (left, right) 转到 (T_abs, T_rel)，对 `T_rel` 用更紧权重或最近邻回退、对 `T_abs` 自由聚合，再映回。**其正当理由只能建立在 IK 可行性上，不能建立在约束破坏上**（实测逐臂独立 retarget 的 `T_rel` 保持误差中位仅 0.6 mm / 0.0°，可忽略）。
+
 
 ## 0.5 页数分配总表（**全文唯一的一份预算表**，各节引用此表，禁止另立）
 
@@ -93,9 +111,23 @@ RA-L 正文 6 页硬预算，IEEEtran 双栏。当前基线设计经排版估算
 - **后果若不改**：Contribution 3、Table I 末行、Fig. 1(a) 的 “no policy update” 徽章同时失效，贡献被压成常数因子之争 → RA-L 拒稿理由。
 - **我们的处理（两条同时做，缺一不可）**：
   1. **实验 E0**：在读者本体的基座微调数据切分中**剔除全部记忆评测任务**，训练完成后冻结，再去读取写者写下的这些任务条目。全文措辞统一为 “the reader's base policy is fine-tuned once, before deployment, on tasks disjoint from the memory-evaluation tasks, and is never touched again”。
-  2. **实验 E1（reader #3）**：FR3 更换一副夹爪 + 移动相机位姿 + 锁定一个关节 = 一个对齐图与基座微调都从未见过的本体（零新硬件）。报告 “admitting reader #3” 的实测代价（配对 episode 数 + 对齐图 GPU-分钟），并与在同一 body pair 上进行 RECAP 式 target 侧微调的代价并排比较。
+  2. **实验 E1（reader #3）**：**单臂模式读者**——把一条臂单独作为读者。动作维度 14→7，`T_rel` 字面消失，③/④ 双臂条目结构性不可读，①② 仍可指导顺序策略。**AgileX 单臂 Piper 是独立在售 SKU，零新硬件。** 报告 “admitting reader #3” 的实测代价（配对 episode 数 + 对齐图 GPU-分钟），并与在同一 body pair 上进行 RECAP 式 target 侧微调的代价并排比较。
   3. 全文**删除** O(T·B) → O(1) 的复杂度论据，改为一张三列实测代价表。
-- **残余风险**：reader #3 是“同一台 FR3 的变体”，审稿人可能会说这不算新本体。**诚实标注为未完全解决**：我们在正文中用 “a modified fixed-base configuration unseen by the alignment map” 描述它，不称其为第三个 embodiment，并明确说明这是 admission cost 的下界估计。
+- **残余风险**：单臂模式是同一台机器的一种配置，审稿人可能会说这不算新本体。**但它通过全部五条判准**（下表），这是关键区别：**受损读者在自己写的条目上的成功率必须仍然接近未受损时，且必须与跨本体数字并排报出**。我们在正文中用 “a single-arm configuration, an in-catalogue SKU, unseen by the alignment map” 描述它，并明确说明这是 admission cost 的下界估计。
+
+**★ embodiment 阶梯的五条判准（必须写进补充材料，并对每一档逐条打分）** —— 用于防御"人为制造困难"这一刀：
+
+| # | 判准 | 说明 |
+|---|---|---|
+| 1 | **Catalog test** | 该构型是否作为产品在售，或属于常规维护后的自然状态 |
+| 2 | **★ Own-task competence test（唯一可一票否决）** | 受损读者在**自己写的条目**上的成功率必须仍然接近未受损时，**且必须与跨本体数字并排报出**。若同比例下降，你造的是一台更差的机器，不是另一台机器 |
+| 3 | **Rule-not-choice test** | 修改必须由**预注册的规则**决定，而非由"哪个关节最能打破 SE(3)"决定 |
+| 4 | **Symmetry test** | 同一修改双向施加 |
+| 5 | **Predictability test** | 若逐任务结果可解析预测则不做（**可预测的实验不携带信息**） |
+
+> **按判准 3 与 5，"锁关节"档当前不合格**（锁定角被硬编码为零位＝人为最劣化配置，且 j6 是在算出"6→5 DoF"之后才选中的，属后验选择）。锁关节降为 plan B，且必须做**锁定角 sweep**（取写者轨迹中位角 + 5 点扫描）。
+> **一个免费且原生的新档**：v5 §1.6 #6 确认**两台夹爪不同款**——接触几何差异是真实产品差异，通过全部五条判准，比 3D 打印手指自然得多。
+
 
 ### 风险 C：**P1 的抽象轴与注入通路、与内容生成器质量二重共线**（Reviewer #2·R1-B2 + Reviewer #2 R2-B4）
 
@@ -119,7 +151,7 @@ RA-L 正文 6 页硬预算，IEEEtran 双栏。当前基线设计经排版估算
 | R1-B6 | C3（自写）与 C4（语料灌库）互斥 | 拆 S_deploy / S_corpus，全文贯彻 | §3.7 / §4.3 |
 | R1-B7 | "adopted unchanged" 是不实陈述 | 统一通路后成立；解码路径显式认领 | §3.6 边界声明 |
 | R1-B8 | 为什么不共训（最强"轴是硬造的"质疑） | 价值命题从成本轴移到时效轴 + 实验 E5 | §1 ¶1/¶5 / §4 E5 |
-| R1-B9 | P3 机理（工作空间子集）运动学上错 + 写入端污染 | 改为 viewpoint 假设 + 锁底盘对照 + 写入端配平 | §4.5 P3 |
+| R1-B9 | P3 机理（工作空间子集）运动学上错 + 写入端污染 | **机理换成限位包络覆盖率**（旧机理已被体素 IoU=0.528 证伪，两者互不包含）；对照换成**工作空间交集核对照**；写入端配平 | §4.5 P3′ |
 | R1-B10 | 两份页数预算打架，§V 装不下 | 单一预算表 + 裁剪清单 | §0.5 / §5 |
 | R2-B1 | TR 可被弃权刷到 1.0 | 强制并报 injection rate；forced-injection 列；<20% 标 n.i. | §4.6 指标 / §4 Table III |
 | R2-B2 | LIBERO↔RoboCasa 同时换 8 个变量，body 效应不可识别 | 2×2 因子（同模拟器内换机器人模型）；不可行则仿真退出正文 | §4.1 / §6 G3 |
@@ -148,12 +180,20 @@ RA-L 正文 6 页硬预算，IEEEtran 双栏。当前基线设计经排版估算
 | R3-B10 | 弱配对双本体数据未排期，在关键路径上 | 第 1 周启动采集；退路 = training-free 语言 key | §6 G3 / §5.2 |
 | R3-B11 | 人力缺口近 2 倍 | FTE 假设写死 + MVP 清单 | §5.2 / §5.3 |
 | R3-B12 | VLAC 可获得性未核实 | 本周核实；退路 = 遥操隐含标签 + 轻量成功分类器 | §7 优先级 1 |
+| **R4-B1** | **层③失败被误归因于"不同运动学族"** —— 把 PiperX 限位放宽到 ±189° 后可行率 **80.8% → 100.0%**，架构贡献 **0.0%**。审稿人 20 行代码可证伪 | **归因拆两项**：层④←架构（标定后仍 7.10 cm / 17.8°）、层③←限位包络（Piper j5 ±70° 是全臂最紧关节）。**两者不得合并叙述** | §4.5 P5 / §4.8 V-C |
+| **R4-B2** | **层④只报朴素复制（82.8°）是稻草人** —— 审稿人第一句就是"你标定了吗"，5 分钟工作量、落差 80% | **必须自己先报三档标定值**（朴素 82.8° / 逐关节仿射 52.4° / 全线性 42 参数 **17.8°**）+ **A7 消融**（④+腕部重解算 → 6.7°） | §4.4 A7 / §4.5 P5 |
+| **R4-B3** | **"+10 pt 双臂协同增益"是搜索预算伪影** —— 协同侧拿到 40×3=120 次 IK 尝试，是独立侧的 15 倍，且额外获准把整个任务挪 ±10 cm/±20° | equal-budget 重跑（同预算同 float、N≥400、报 Wilson 区间）。**若增益 <5 pt 或落在 CI 内 → 删掉这条 Contribution**，换成纯定性的 R-t-S 聚合缺陷 | §0.4 C-额外 / §4.4 |
+| **R4-B4** | **两台夹爪不同款**，而全部 φ 数字建在"同款夹爪、仅安装 rpy 差 90°"上 | 实测两台 TCP 偏置 → 重跑 `RAL2027/kinematics/` 全部脚本 → **把"夹爪差异单独贡献几个点"报成阶梯上的一档**。**重跑之前正文不得写任何可行率数字** | §4.5 P5 / §7 P0 |
+
 
 **未解决 / 已接受的风险（诚实标注，不粉饰）**：
-- **n=2 的一般性**：两具本体不足以支撑关于 embodiment 的一般规律。措辞一律限定为 "a spectrum measured on this pair"，绝不写 generalizes across embodiments。无技术解。
-- **reader #3 是同一台 FR3 的改装**，不是真正的第三种形态。admission cost 只是下界。
-- **绝对成功率可能很低**（对照：RECAP 真机 close-cabinet 30%；RoboMME 最好方法 44.51% 而人类 90.5%）。已在 §1 ¶5 主动划边界并在所有图里画 frozen-base 地板线。
-- **抢跑窗口**：Dejavu 附录逐字写出我们的方案（"unified latent representation spaces or lightweight alignment layers that enable cross-robot retrieval and reuse of experience, while guarding against negative transfer"，一手核实）；RECAP §6 把跨本体检索表示标为 open question；RoboMME §6 点名 memory-bank methods + mobile manipulation；VLA-Pro future work 点名 hierarchical procedural states。**建议 G1 通过后立即 arXiv 占位 P1–P4。**
+- **n=2 的一般性**：两具本体不足以支撑关于 embodiment 的一般规律。措辞一律限定为 "a spectrum measured on this pair"，绝不写 generalizes across embodiments。**加入单臂 reader 后 n 从 2 提到 3**，缓解但不解决。无技术解。
+- **reader #3 是同一台机器的单臂模式**，不是真正的第三种形态；但它是**在售 SKU** 且通过 own-task-competence 检验。admission cost 只是下界。
+- **绝对成功率可能很低**（对照：RECAP 真机 close-cabinet 30%；RoboMME 最好方法 44.51% 而人类 90.5%；**R-t-S 在同款双臂 AgileX PiPER 上叠 T 恤 39–48%**）。已在 §1 ¶5 主动划边界并在所有图里画 frozen-base 地板线。**好消息**：R-t-S 的 39–48% 正落在 headroom 窗口 → **叠衣族不需人为制造 headroom；但门族必须做**（否则天花板）。
+- **★ 谱系交叉点可能不存在（新增，最致命）**：在 6-DoF 无零空间的臂上，**同本体** FK→IK 几乎无损（实测 position-only 可行率 100.0%），③与④很可能生成数值上几乎相同的轨迹。**由 G0.5 判定，成本 0 机器人小时**；`SR_same(④) − SR_same(③) < 5 pp` → 四层谱系框架当场死亡，切 **cross-body admissibility** 的 fallback framing（预注册文本必须现在就写进补充材料）。
+- **★ 可形变物无法复现初始状态（新增）**：一件衣服的初始褶皱物理上不可复现，而 McNemar / harm rate / 成对 Δ 三个量全部建立在 matched initial state 上。→ 拆两个预注册主端点 + 容差化配对（模板 IoU ≥ 0.90）+ **A/A 噪声地板控制（不可砍）**。F 族的配对只能称 "state-matched to within a pre-registered tolerance"，**绝不写 identical initial state**。
+- **抢跑窗口（排序已变，R-t-S 升到第一位）**：**Retrieve-then-Steer 团队**已同时拥有 6-DoF ALOHA-PiPER 与 7-DoF OpenArm 两具异构双臂本体，并在正文里点名二者 "different arm kinematics, gripper designs, and workspace layouts"——**做跨本体记忆只差一个实验**；Dejavu 附录逐字写出我们的方案（"unified latent representation spaces or lightweight alignment layers that enable cross-robot retrieval and reuse of experience, while guarding against negative transfer"，一手核实）；RECAP §6 把跨本体检索表示标为 open question；RoboMME §6 点名 memory-bank methods + mobile manipulation；VLA-Pro future work 点名 hierarchical procedural states。**建议 G2a 通过后立即 arXiv 占位 P1′/P2/P3′。**
+
 
 ---
 
@@ -174,6 +214,18 @@ RA-L 正文 6 页硬预算，IEEEtran 双栏。当前基线设计经排版估算
 - [ ] 不出现 γ_sim = 0.9992 作为"机制性否决"的论据（风险 A）
 - [ ] 不出现 O(T·B) / O(1) 复杂度论据（风险 B）
 - [ ] transfer rate 若在 Intro 出现，必须当场给定义式
+- [ ] **不出现 "Piper vs PiperX" 作为本体对的门面**（框架反转，见下）
+- [ ] **不写"连杆长度不同"**——审稿人会认为不足以支撑跨本体主张
+- [ ] **不把层③的失败写成"不同运动学族"**（放宽限位即 100%，20 行代码可证伪）
+- [ ] **不只报 82.8°**——必须自己先报标定后的 7.10 cm / 17.8°
+- [ ] ④层的表述里**不出现"潜码 / latents"**（那正是 GR00T EmbodimentTag 在做的事）
+
+**★ 框架反转（零成本，收益最大，写进 ¶5 与 §IV）**：正文**永远不要以 "Piper vs PiperX" 作为本体对的门面**。用最宽的一档（单臂 reader，14→7 维）开场，把 Piper↔PiperX 放在阶梯的**最难/最保守**一端，写成：
+
+> even between two arms from the same vendor and generation, with the same DoF, the same payload, the same repeatability and a 6.9 % difference in reach, joint-space content does not transfer.
+
+这句话比"我们跨了两台臂"强一个量级，而且它**把审稿人的先天怀疑变成论文的论点**。
+
 
 ## 1.1 ¶1 — *现象，以及为什么显而易见的答案并不是答案*
 
@@ -248,12 +300,16 @@ RA-L 正文 6 页硬预算，IEEEtran 双栏。当前基线设计经排版估算
 ## 1.5 ¶5 — *我们验证什么、预期是什么，以及边界在哪里（What we verify, the predictions, and the boundary）*
 
 **核心句**：
-> 我们在两个都实际部署的身体上测试这一问题：一台 fixed-base 7-DoF Franka FR3，以及一台 π0.5-class mobile manipulator。二者都向同一个存储体写入，也都从中读取，并且两个方向都测。两个身体是这个问题得以成立的最小数量，而这一对之所以被选中，是因为它构成了一个干净的二元对比——固定底座 versus 移动底座，固定视角 versus 变化视角。我们报告的是在这一对身体上测得的一条谱系，而不是关于所有身体的一条定律。
+> 我们在两个都实际部署的身体上测试这一问题：一台**球形手腕的双臂 Piper**，以及一台**偏置手腕的双臂 PiperX**——二者 DoF、负载、重复精度完全相同，臂展相差 6.9%，但分属不同运动学族（Puma 型 vs UR 型；同名关节语义不同：Piper 的 j4 是腕部 roll，PiperX 的 j4 是肘平面 pitch）。二者都向同一个存储体写入，也都从中读取，并且两个方向都测。我们报告的是在这一对身体上测得的一条谱系，而不是关于所有身体的一条定律。
 
 **预注册预测（一句三分句，~60 词，带前向引用）**：
-> 我们在报告结果之前先陈述预测。**(P1)** Cross-body transfer 会随着抽象程度上升而提高，而 same-body accuracy 则由内容保真度而非抽象层级主导 (§V-B)。 **(P2)** Cross-body 损失主要由 retrieval 和 retargeting 两项主导，而不是由 value 不可执行性主导 (§V-C)。 **(P3)** 两个身体之间的 transfer 在方向上是不对称的，我们将这种不对称归因于视角变化性，而非工作空间包含关系 (§V-D)。
+> 我们在报告结果之前先陈述预测。**(P1′)** 存在一个抽象层级 ℓ\*，使得同本体读取上更具体的层更精确、而跨本体读取上更抽象的层更可迁移——**即两条曲线在 ℓ\* 处交叉**，我们预测 ℓ\* 落在③与④之间 (§V-B)。 **(P2)** Cross-body 损失主要由 retrieval 和 retargeting 两项主导，而不是由 value 不可执行性主导 (§V-C)。 **(P3′)** 两个身体之间的 transfer 在方向上是不对称的，我们将这种不对称归因于**读者的关节限位包络对写者任务盒位姿的覆盖率**，并且**可以用一个纯离线的运动学统计量预测其方向与逐任务排序** (§V-D)。
 
-**P4 不进 Intro**（共享池负迁移是 P1 的推论，独立信息量最低，且需要一句设置说明）；在 §V-E 定义。
+> **P1′ 的措辞为什么必须收窄**：单调"越抽象越可迁移"不是 finding（GR00T N1.7 已主张）。**交叉点才是。没有哪一层永远最好。**
+> **P3′ 的机理为什么换掉**：旧机理"定基记忆是移动记忆的子集"在本硬件上被证伪——两者工作空间体素 **IoU=0.528**，互不包含（Piper 被 X 覆盖 72.2%，X 被 Piper 覆盖 66.3%）。新机理有实测支持：Piper→X 层③ IK 可行 **80.0%** vs X→Piper **57.3%**，差 22.7 pt，因为 Piper 的 j5 只有 ±70°、是全臂最紧关节。
+
+**P4 与 P5 不进 Intro**（P4 共享池负迁移是 P1′ 的推论；P5 是归因层的技术命题）；分别在 §V-E 与 §V-C 定义。
+
 
 **主动划边界（不可省）**：
 > 由于两个 backbone 都保持冻结，memory 所能带来的，是对 base policy 已经具备的行为进行召回与重组，而不是获得新的 motor skills。我们报告逐次试验的 memory-harm rate；并且在每一个 success rate 旁边同时报告 injection rate——即实际注入了某个 prior 的试验所占比例——因为一个经常选择 abstain 的 retrieval 系统，否则可能会在实际上什么都没做的情况下，看起来实现了完美迁移。
@@ -265,14 +321,15 @@ RA-L 正文 6 页硬预算，IEEEtran 双栏。当前基线设计经排版估算
 
 **Fig. 1（跨双栏，p.1 顶部，0.22 页，两 panel 横排 —— 已删除原 panel (c)）**
 
-**Panel (a) "一个存储，两个已部署的身体"（"One store, two deployed bodies"）**：左 = Franka FR3（定基 7-DoF，桌面场景）实拍；右 = π0.5 同款移动机械臂在**不同房间/不同视角**执行同一任务实拍。中间数据库圆柱标 `persistent store`。FR3 → DB 实线 `write`，DB → mobile 实线 `read`，读箭头挂徽章 `no gradient after deployment`（**不是 "no policy update"** —— 措辞必须与 ¶4(d) 一致）。浅色反向箭头表 bidirectional。角标小字：`both bodies deployed · both write · both read`。
+**Panel (a) "一个存储，两个已部署的身体"（"One store, two deployed bodies"）**：左 = **双臂 Piper**（球腕）实拍；右 = **双臂 PiperX**（偏置腕）在**不同工位/不同视角**执行同一任务实拍。中间数据库圆柱标 `persistent store`。Piper → DB 实线 `write`，DB → PiperX 实线 `read`，读箭头挂徽章 `no gradient after deployment`（**不是 "no policy update"** —— 措辞必须与 ¶4(d) 一致）。浅色反向箭头表 bidirectional。角标小字：`both bodies deployed · both write · both read`。**建议在角标补一句 `same DoF · same payload · different wrist topology`——把最弱的一面主动交出来，然后用运动学族反击。**
 
-**Panel (b) "条目中包含什么，以及它如何被读取"（"What is in an entry, and how it is read"）**：一张卡片，四条色带 ①grounded-but-re-groundable language ②object-centric subgoals ③object-anchored EE deltas ④joint-space action chunk；左侧钥匙图标标 `body-agnostic key`；**右侧画出统一读出接口**：四层各有一条箭头汇入同一个 `decode → reader's action space` 方框，再汇入 `frozen flow sampler, intermediate-state injection [R-t-S]`。这张图同时完成两件事：展示分层，以及**用图形声明注入通路是常量**（对抗 R1-B2 的共线质疑）。
+**Panel (b) "条目中包含什么，以及它如何被读取"（"What is in an entry, and how it is read"）**：一张卡片，四条色带 ①grounded-but-re-groundable language ②object-centric subgoals ③**anchor-frame contact-point motion，含显式 (T_abs, T_rel) 拆分** ④joint-space action chunk（**物理单位**）；左侧钥匙图标标 `body-agnostic key`；**右侧画出统一读出接口**：四层各有一条箭头汇入同一个 `decode → reader's action space` 方框，再汇入 `frozen flow sampler, intermediate-state injection [R-t-S]`。这张图同时完成两件事：展示分层，以及**用图形声明注入通路是常量**（对抗 R1-B2 的共线质疑）。
 
-**制作所需数据**：(a) 两台真机同任务实拍各 1 张（需现场补拍，含房间背景差异）；(b) 从我们自己的库导出的**一条真实条目**的四层内容（不要手编）。
+**制作所需数据**：(a) 两台真机同任务实拍各 1 张（需现场补拍，含工位背景差异）；(b) 从我们自己的库导出的**一条真实条目**的四层内容（不要手编）。**(b) 的素材直接来自 demo 第二段（§4.10），不另拍。**
+
 
 **Caption 英文初稿**：
-> Fig. 1. **由两个已部署身体共享的持久动作存储。** (a) 一台定基 Franka FR3 和一台移动机械臂都已部署；二者都向同一个 persistent store 写入，也都从中读取，并且各自都会读取由对方写入的条目，而在部署之后没有任何 gradient 到达其 policy。(b) 每个条目以四个抽象层次保存同一段经验，从由 reader 在其自身图像中重新 grounding 的语言摘要，一直到 joint-space action chunk，并由一个 body-agnostic key 索引。每一层都会先被 decode 到 reader 自身的 action space，然后再注入到 reader 冻结的 flow-matching sampler 的某个 intermediate state 中，因此被改变的是抽象层次，而被固定不变的是注入点；实际到达的层次本身也是一个测量量（§V-B）。
+> Fig. 1. **由两个已部署身体共享的持久动作存储。** (a) 一台**球腕双臂 Piper** 和一台**偏置腕双臂 PiperX** 都已部署——二者 DoF、负载与重复精度相同，臂展相差 6.9%，但分属不同运动学族；二者都向同一个 persistent store 写入，也都从中读取，并且各自都会读取由对方写入的条目，而在部署之后没有任何 gradient 到达其 policy。(b) 每个条目以四个抽象层次保存同一段经验，从由 reader 在其自身图像中重新 grounding 的语言摘要，一直到以物理单位保存的 joint-space action chunk，并由一个 body-agnostic key 索引。每一层都会先被 decode 到 reader 自身的 action space，然后再注入到 reader 冻结的 flow-matching sampler 的某个 intermediate state 中，因此被改变的是抽象层次，而被固定不变的是注入点；实际到达的层次本身也是一个测量量（§V-B）。
 
 ## 1.7 待定决策（Intro 专属，写第一个字之前必须定）
 
@@ -324,7 +381,11 @@ RA-L 正文 6 页硬预算，IEEEtran 双栏。当前基线设计经排版估算
 
 **¶4 —— 按条目里 value 的抽象层级排成阶梯（这是 §III 分层设计的动机来源）。**
 - **④ 逐帧原始动作**：VINN 存储逐时间步的 (观测 embedding, 专家动作)，读出是 embedding 空间中 k 近邻的 softmin 加权平均；当人手演示迁移到机器人时，需要一个**手工调节的逐轴系数**来补偿本体差异（来源：`threat_RAM_RoboOS.md` §11）。**venue 未核实，引用时只标 arXiv。**
-- **③ 物体相对末端速度**：Di Palo & Johns（**RA-L 2023**）提出 retrieve–align–replay，使用 DINO-ViT 检索 bottleneck 目标图 + 视觉伺服对齐 + 开环回放 6-DoF EE 速度轨迹，training/intra-class/inter-class 分别为 80% / 73% / 67%；DINOBot (ICRA'24) 保留了完全相同的 value，仅替换了对齐机制。**同一 venue，必须主动引用、主动划界。**
+- **③ 物体相对末端速度 / 锚点系接触点运动**：Di Palo & Johns（**RA-L 2023**）提出 retrieve–align–replay，使用 DINO-ViT 检索 bottleneck 目标图 + 视觉伺服对齐 + 开环回放 6-DoF EE 速度轨迹，training/intra-class/inter-class 分别为 80% / 73% / 67%；DINOBot (ICRA'24) 保留了完全相同的 value，仅替换了对齐机制。**同一 venue，必须主动引用、主动划界。**
+  - **★ 还必须补上 GR00T N1.7**：其 README 明文主张 relative EEF action space —— "Representing actions as **deltas from the current pose** … is **a key factor in the model's cross-embodiment performance**"，且已参数化为 `ActionConfig(rep=RELATIVE, type=EEF)`。→ **③层不能再宣称新颖**，重新定位为"**已知会迁移的那一层**，纳入谱系是为了给另外三层提供标定基准（upper anchor）"。
+  - **★ 还必须补上 point-track / flow 一族（9 篇，按族打包为 1–2 条引用）**：ATM (2401.00025)、Track2Act (ECCV'24)、Im2Flow2Act (CoRL'24)、MT-π、3DFlowAction、PointAction、ContactFlow、Point Policy、P3-PO；以及 kPAM 2.0 (RA-L) 的 "object-centric action representation in terms of … oriented keypoints"。**全部自带跨本体证据。**
+  - **本文在③层的新颖点因此收窄为**："把它做成**持久、自写入、跨本体可读**的记忆条目"，而不是"提出这种表示"。
+
 - **② 物体中心 affordance**：Robo-ABC（51 类，(无遮挡 crop, 2D 接触点)）；RAM（660 条，离线提取自 DROID / HOI4D / 互联网图片，读出为一个 3D 接触点 + 一个接触后方向，由 AnyGrasp + MoveIt!/cuRobo 执行，自称 zero-shot、embodiment-agnostic，跨本体仅有定性 demo、没有 success rate 表）。
 - **① 语言 / 规划层**：RoboHarness（success/failure 双库 + 两阶段 consolidation，围绕冻结的 π0/π0.5/SmolVLA，全部为 LIBERO 仿真、无真机）；RoboOS（跨异构机器人的 shared memory：场景图、工具调用历史、各机器人 motion domain constraints / 关节状态 / 电量）。
 - **落点句（= SQ1 的动机句）**：这四层分别被不同论文占据，运行在不同机器人上，采用不同协议与不同读出端（运动规划器 / 视觉伺服+开环回放 / k-NN 平均 / 提示词重写）—— 正因如此，层与层之间的权衡至今无法比较。
@@ -335,6 +396,11 @@ RA-L 正文 6 页硬预算，IEEEtran 双栏。当前基线设计经排版估算
 **¶5 —— 现代冻结 VLA 系统：条目是谁写的 / 更换 reader 要付出什么代价。**
 - **Dejavu**：冻结 VLA + Experience Feedback Network，记忆库在部署过程中持续扩充；但 EFN 是通过 RL 训练得到的，而且其 Limitations 逐字写道（已做一手核实）："each VLA backbone maintains its own experience bank, tailored to a single domain or embodiment; this simplifies training but prevents reusing experience across ... different manipulation platforms"，并将 alignment layers 与 guarding against negative transfer 列为 future work。
 - **Retrieve-then-Steer**：冻结 π0/π0.5/CogACT，在部署中在线写入由 VLAC 校准的成功片段；条目是 (VLA visual-encoder 池化特征 key, action chunk)；注入点位于 flow 采样器的中间态，并结合置信度自适应引导；**记忆在每个任务开始时都会重新初始化**；淘汰机制只有 FIFO。
+  - **★ 必须升级为"同硬件同任务的直接前作"，不再只是"注入机制提供者"**（v5 §2.3）：其附录 D 已在**同款双臂 AgileX PiPER**（ALOHA 式配置、两只 6-DoF PiPER + 两指夹爪）上做过 **bimanual T-shirt folding**，π0.5+Ours 在 in-domain 黄 T 恤 **42.0→50.0**、OOD 白 T 恤 36.0→46.0，**每任务 50 trials、成对同初始状态、评测时基座冻结**。另一平台是 7-DoF OpenArm，原文明说二者 "provide complementary testbeds for evaluating our method across **different arm kinematics**, gripper designs, and workspace layouts"。
+  - **划界措辞（正文可直接用）**：*Retrieve-then-Steer demonstrates online success memory on an ALOHA-PiPER platform for bimanual T-shirt folding (42.0→50.0 over 50 trials on a single task), but its memory is written and read by the same platform; it reports no transfer between its two platforms, and cross-embodiment reuse does not appear among its stated limitations or future work.*
+  - **一手核实的边界**：全文 `cross-platform` / `cross-embodiment` / `shared memory` / `across platforms` **零命中**；future work 只提"更可靠的成功验证、不确定性感知检索、可扩展记忆管理、更动态的环境"，**没有跨本体**。
+  - **反过来可为我所用的一句**：其 Limitations 逐字写道，当 "object layouts, camera viewpoints, task goals, or **robot calibration** change rapidly, previously stored action priors may become less informative or **even misleading**" —— **既承认记忆是标定/本体绑定的，又给了我们 harm rate 指标一个可引的出处。**
+
 - **RECAP**：在配对演示上训练一次后即冻结，依靠向池中追加 pool 侧演示、且无需训练来吸收新任务；共享表示是 SE(3) EE pose + gripper；pool embodiment "is never deployed"；摘要逐字写道 "Fine-tuning is needed only to take on a new, unseen embodiment, not for each new task"；Limitations 亲口将 "what constitutes an effective representation for cross-embodiment retrieval" 标为 open question。
 - retrieve-then-finetune 一族（Behavior Retrieval / STRAP）：检索的是**训练数据**，取回后仍然需要运行梯度，用一句话带过。**【待确认】本组尚未通读这两篇全文，Table I 中该族已整行删除（见 2.4）。**
 - 其余同族（RAEA / RTCF / Remember Smarter / SkillMemo / RAGDP）打包为一个 e.g.。
@@ -343,8 +409,11 @@ RA-L 正文 6 页硬预算，IEEEtran 双栏。当前基线设计经排版估算
 
 **II-D 已并入 ¶5 末尾（3 句，不引入新文献）**：
 1. 合取式一次说完：由部署中的机器人自己以零梯度、单步方式写入；作为可删除的显式条目跨部署留存；由另一具同样处于部署中的身体在无 policy 梯度下读取；读出端是冻结的 VLA action expert 加一个非学习的 retarget 算子（**必须补上 retarget，否则是 overclaim**）。
-2. 诚实清单（不可省）：注入机制来自 Retrieve-then-Steer；零梯度池增长来自 RECAP；条目级删除来自 CLARE；表示/注入轴的术语来自 RoboMME；embodiment-agnostic 检索来自 RAM；②③④ 三层的表示设计分别有 RAM / Di Palo & Johns / VINN 的先例。
-3. 贡献钉在唯一不可替代的那条：**在同一次采集、同一套协议、同一个读出接口下并排测量四个抽象层级的迁移率，并把跨本体损失分解为 key / retarget / value 三项。**
+2. 诚实清单（不可省）：注入机制来自 Retrieve-then-Steer，**且同类机制在 GR00T N1.7 的 real-time chunking 中已有工业实现**；零梯度池增长来自 RECAP；条目级删除来自 CLARE；表示/注入轴的术语来自 RoboMME；embodiment-agnostic 检索来自 RAM；**②③④ 三层的表示设计分别有 RAM / Di Palo & Johns（+GR00T N1.7 + point-track 一族）/ VINN 的先例**；**条目 schema 直接采用 RDT-1B 的 128 维 `STATE_VEC_IDX_MAPPING`（③④按臂并列具名 + `action_mask`）**；**冻结 π0.5 + 检索记忆在双臂 AgileX PiPER 上叠 T 恤已由 Retrieve-then-Steer 附录 D 完成**。
+3. 贡献钉在唯一不可替代的那条：**在同一次采集、同一套协议、同一个读出接口下并排测量四个抽象层级的迁移率并定位交叉点，并把跨本体损失分解为 key / 限位包络 / 几何 / value 四项。**
+4. **★ 一个必须主动引用的对照（Intro 也用）**：**GR00T 用"更新参数"解决跨本体**——其 `CategorySpecificLinear.W = 0.02*randn(num_categories, in, out)` 意味着新本体拿到一片**随机初始化**的 state/action 编解码权重、必须用该本体数据训练；**而本文的主张恰恰是"不更新策略参数"**。这是全文最好用的一句对照。
+5. **★ 一个已核实的真空白**：`all:"cloth manipulation" AND all:"cross-embodiment"` 在 arXiv **0 条**。跨机器人的布料操作经验迁移无人做过，**这个空白是真的，可写**。
+
 
 ## 2.4 Table I（完整 Markdown，8 行 × 6 列，纯符号）
 
@@ -362,14 +431,17 @@ RA-L 正文 6 页硬预算，IEEEtran 双栏。当前基线设计经排版估算
 
 | # | Family (representative) | Value | Persist | Self-write | 2nd reader | Readout | New-reader cost |
 |---|---|---|---|---|---|---|---|
-| 1 | Within-episode context (RoboMME; RoboTTT; MimicDroid) | ctx | ✗ | ✓ (episode) | ✓ (human→robot) | ctx | n/a |
+| 1 | Within-episode context (RoboMME; RoboTTT; MimicDroid; **Instant-Fold**) | ctx | ✗ | ✓ (episode) | ✓ (human→robot) | ctx | n/a |
 | 2 | Parametric, monolithic (seq. FT; ER) | par | ✓ | ✗ | ✗ | grad | full retrain |
 | 3 | Parametric, modular (CLARE; VLA-Pro) | par | ✓ | ✗ | ✗ | pol | impossible (bound to backbone) |
 | 4 | Explicit entries, planner readout (VINN; Di Palo & Johns; Robo-ABC; RAM) | ②③④ | ✓ | ✗ | ✓ (RAM, qualitative) | plan | n/a (no policy) |
 | 5 | Explicit entries, agent level (RoboHarness; RoboOS) | ①/env | ✓ | ✓ | ✓ (RoboOS) | ctx / plan | none, but no action content |
-| 6 | Deployment-written, same body (Retrieve-then-Steer; Dejavu) | ④ | per-task ↺ / ✓ | ✓ / ✓(bank) | ✗ | pol | not supported |
+| 6 | Deployment-written, same body (**Retrieve-then-Steer**; Dejavu) | ④ | per-task ↺ / ✓ | ✓ / ✓(bank) | ✗ | pol | not supported |
 | 7 | Curated cross-body pool (RECAP) | ③ | ✓ | ✗ (pool never deployed) | ✓* | pol | one target-side fine-tune |
-| 8 | **Ours** | **①–④ + tag** | **✓** | **✓** (deployment store) | **✓** (both deployed, bidirectional) | **pol + retarget** | **one alignment map, no policy gradient** |
+| 8 | **Ours** | **①–④ + tag** | **✓** | **✓** (deployment store) | **✓** (both deployed, bidirectional, **different wrist topology**) | **pol + retarget** | **one alignment map, no policy gradient** |
+
+**★ 第 6 行的 body 列必须补注**：`ALOHA-PiPER (bimanual, 6-DoF ×2) + OpenArm (7-DoF ×2)` —— **他们已经有两具异构双臂本体，只是没有让记忆跨过去。** 这既是最诚实的写法，也是最有力的定位：我们做的正是他们硬件上具备、却没有做的那一个实验。
+
 
 **相对 baseline 设计的三处判定修正（必须执行）**：
 - **RECAP 的 Delete 列已整列删除** —— 原先判为 ✓ 的依据是 "4 episodes removed by hand"，但那是训练期为了对齐卫生而剔除的 query episode（训练数据清洗），不是部署期的条目删除；属于范畴错误。删除该列也同时节省版面。
@@ -457,14 +529,28 @@ e_i=\bigl(\mathbf{k}_i,\ \{v_i^{(\ell)}\}_{\ell=1}^{4},\ \beta_i,\ c_i,\ t_i\big
 | 层 | 内容 | 生成方式 | 存储量级 | 已有占位者（RW 必须引用） |
 |---|---|---|---|---|
 | ① language | 一句摘要：动作动词 + 物体名 + 物体间关系（**无写入者像素坐标**），例 `"pull the top drawer handle toward the operator side"` | 冻结 VLM 对片段首末帧 + 任务指令生成；oracle 版由演示脚本/人工提供 | ~40 B | 无直接占位者 |
-| ② object-centric subgoal | 子目标序列 `[(approach, handle), (grasp, handle), (translate, +0.15 m along handle axis), (release)]`，坐标在**物体系** | 由 ① + 物体跟踪结果构造；oracle 版由仿真真值/演示脚本 | ~200 B | RAM / Robo-ABC |
-| ③ object-anchored EE deltas | `Δp ∈ R^{T×3}`, `Δr ∈ so(3)^{T}`, gripper，锚定在**物体坐标系**（**不是机器人基座系** —— 移动底盘下基座系无意义） | 由末端位姿轨迹 + 物体位姿序列做变换 | ~2 KB | **Di Palo & Johns (RA-L'23)** / DINOBot |
-| ④ joint-space chunk | 写入本体的关节动作序列，按读出本体的 action horizon `H` 切块 | 直接来自 rollout | ~4 KB | VINN |
+| ② object-centric subgoal | 子目标序列。**必须显式声明两套 anchor 原语词表**（否则两类任务上②层数字不可比、R2-B8 复活）：<br>• 铰接/DLO：`(primitive, joint_id 或 arc_station, Δθ 或 Δs)`（沿用 Kinematic-aware Prompting）<br>• 可形变：`(pick keypoint_i) → (place at keypoint_j / keypoint 系下偏移)`（沿用 CLASP 词表）<br>统一形式 `(contact point, target displacement in anchor frame)` | 由 ① + 物体/关键点跟踪构造；oracle 版由演示脚本 | ~200 B | RAM / Robo-ABC |
+| ③ **anchor-frame contact-point motion** | **受控接触点（们）的轨迹**，表达在一个**低维、任务相关、与本体无关的几何锚点系**中；存在约束坐标时**退化为该标量剖面**；双臂情形额外存 **`(T_abs(t), T_rel(t))`**。<br>**四类任务的锚点**：铰链螺旋轴 (â,o)（一维 θ）→ DLO 弧长站（一维 s）→ 语义关键点元组（衣物）→ SOI 环（袋，**无成熟检测器，排除**） | 由末端位姿轨迹 + 锚点系变换。**布料上不需要 6-DoF 物体位姿**——见下 | 铰接门仅 **~100 B**（6T→T 个数）；其余 ~2 KB | **Di Palo & Johns (RA-L'23)** / DINOBot / **GR00T N1.7 (relative EEF)** / point-track 一族 9 篇 |
+| ④ joint-space chunk | 写入本体的关节动作序列（双臂 14 维），按读出本体的 action horizon `H` 切块。**★ 一律存物理单位（关节角弧度、夹爪 [0,1]），绝不存归一化值**；读出时由读者用自己的 norm stats 重新归一化 | 直接来自 rollout | ~4 KB | VINN |
 
-**存储成本一句话（必须给实测，不可空口）**：`bytes/entry = \todo{}`；10⁵ 条 = \todo{} GB。**但成本不是争点，必要性才是** —— 见 III-D 的 derive-on-read 论证。
+> **④层为什么必须删掉"潜码/latents"这个词**：那正是 GR00T 的 per-embodiment action head 在做的事，照原样写评审会说"这就是 EmbodimentTag"。正确定义：**④ = writer 写下的原始关节指令，reader 侧不允许有任何被训练过的解码器；唯一允许的桥是基于模型的（非学习的）FK/IK retarget。** 这样④的意义从"另一种表示"变成"**测量原始关节内容失效得多彻底**"。
+>
+> **④层为什么必须存物理单位**：两具本体各算 norm stats 会导致同一物理动作在两边归一化数值不同，④层的跨体失败中会混入**纯归一化失配**——审稿人一眼能看穿的平凡混淆。**这条必须写进 §IV 正文，不是实现细节。**
+
+**存储成本一句话（必须给实测，不可空口）**：`bytes/entry = \todo{}`；\todo{N_max} 条 = \todo{} GB。**但成本不是争点，必要性才是** —— 见 III-D 的 derive-on-read 论证。
 
 **②③ 共用同一个感知前端（必须主动写明，R3-B6）**：
-> object-centric subgoals 与 object-anchored deltas 都需要 6-DoF 物体位姿。我们在抓取前通过 detector 和 tracker 获得该位姿，在抓取后则利用夹爪自身位姿并借助刚性附着假设得到；因此 ② 和 ③ 共享同一种失效模式，我们也将按此方式进行报告。
+> object-centric subgoals 与 anchor-frame contact-point motion 都需要锚点估计。我们在抓取前通过 detector 和 tracker 获得，在抓取后则利用夹爪自身位姿；因此 ② 和 ③ 共享同一种失效模式，我们也将按此方式进行报告。
+
+**★ 但"刚性附着假设"对布料不成立，必须改写（v5 §4.4）**：
+> 抓住布料后我们并不知道物体位姿，但**确切知道抓住了哪个物质点**，而夹爪位姿正好给出该物质点的精确轨迹。所以布料上的③应写成 **被抓物质点（们）相对关键点锚定系的轨迹**——形式上就是 point-track / flow 表示。这保住了 D2 的工时估计（不需要 6-DoF 位姿估计），同时对布料是**正确的**。
+
+**★ 为什么③在铰接体上比 6-DoF 物体位姿更好用（可写进 §III 的论证）**：
+- **几何论证**：单自由度旋转铰接体的位形空间是 S¹ 的一个区间。给定轴 (â, o) 与把手到轴的半径 r，末端接触点整条路径由标量 θ(t) 唯一生成。**其余 5 个自由度由约束规定而非由记忆规定**——记忆只需存"开到多少度、什么角速度剖面、在哪个角度有阻尼/卡扣"。
+- **对前端误差的敏感度结构性更低**：自由刚体的位姿估计误差全额传导到③层；铰接体只有沿弧长一个方向的误差是表征误差，法向误差要么被柔顺吸收、要么变成内力。
+- **经典引文（Crossref 已核）**：Task Frame Formalism（Bruyninckx & De Schutter, IEEE T-RA 1996, DOI 10.1109/70.508440）；Task Space Regions（Berenson et al., IJRR 2011, DOI 10.1177/0278364910396389）。
+- **必须写进论文的诚实警告**：门固定于世界、物体系静止，这是**最容易的一档**；且门任务上②与③几乎退化为同一件事（②=`rotate by Δθ`，③=同句加 θ(t) 剖面）。**门任务能证明③可定义，但压不出②/③差异——这必须写成预测而非意外。**
+
 
 ## 3.3 III-C. 与本体无关的 key 与对齐映射
 
@@ -489,8 +575,14 @@ e_i=\bigl(\mathbf{k}_i,\ \{v_i^{(\ell)}\}_{\ell=1}^{4},\ \beta_i,\ c_i,\ t_i\big
 
 **回退读出**：同本体优先 ④；跨本体从 ④ 起逐级上移，直到解码成功且 IK 可行。**回退到哪一层本身是实验读数。**
 
-**与 Retrieve-then-Steer 的边界声明（英文一句，正文原文）**：
-> 对于那些被解码到 reader 动作空间中的 entries，我们不作任何改动地采用 [R-t-S] 的 aggregation、flow sampler 的 intermediate-state initialisation、confidence-adaptive guidance strength，以及 abstain-and-fall-back 规则，其中也包括其对 Euclidean、SO(3) 与 gripper 分量进行 component-aware aggregation 的做法。不属于该方法、也是我们在此描述的部分，是将不同抽象层级的 entries 映射为统一此类动作空间先验的解码路径。
+**与 Retrieve-then-Steer 的边界声明（英文一句，正文原文 —— 已按 v5 §2.3 加强）**：
+> We adopt unchanged from [R-t-S] the aggregation, the intermediate-state initialisation of the flow sampler, the confidence-adaptive guidance strength, and the abstain-and-fall-back rule, including its component-aware aggregation of Euclidean, $SO(3)$ and gripper components. We note that intermediate-state injection with a soft per-element mask also has an industrial implementation in GR00T N1.7's real-time chunking (`vel_strength`, exponential ramp), which further supports our position that the injection mechanism is not the contribution. What is not from that method, and what we describe here, is the decoding path that maps entries at different levels of abstraction into a common action-space prior, **and the change of coordinates that precedes aggregation for bimanual entries** (Sec. III-D).
+
+**★ 双臂条目的坐标变换（本文第二项机制增量，必须写清正当理由）**：
+> R-t-S 的 component-aware aggregation 对**拼接后的双臂动作向量逐分量**做相似度加权平均。**K 条候选 chunk 的逐坐标平均，其相对变换一般不等于各候选相对变换的任何保约束平均**——即在 retarget 之前，聚合本身就可能破坏双臂闭链/接触约束。
+> **修法**：先把每条候选从 (left, right) 转到 `(T_abs, T_rel)`，对 `T_rel` 用更紧权重或最近邻回退（与其对夹爪冲突的保守回退同构）、对 `T_abs` 自由聚合，再映回。**它改的是聚合前的坐标，不是注入路径，不违反"注入机制沿用 R-t-S"的诚实声明。**
+> **★ 但正当理由只能建立在 IK 可行性上**：实测逐臂独立 retarget 的 `T_rel` 保持误差中位仅 **0.6 mm / 0.0°**，可忽略——**所以不能拿"约束破坏"当理由**。且"协同 +10 pt"这个数字目前是搜索预算伪影（协同侧拿到 15× 的 IK 尝试），**必须 equal-budget 重跑；若增益 <5 pt 或落在 CI 内则删掉这条 Contribution**，换成上面那条纯定性的聚合缺陷。
+
 
 **derive-on-read 的必要性论证（对抗 R1-B3，本文唯一的辩护）**：
 > 层级 ①–③ 都是层级 ④ 与所存储帧共同决定的确定性函数，因此，一个信息等价的 store 完全可以只物化 ④，而在读出时再推导其余层级。区别只在于成本在何处支付。我们对其进行了测量：在读出时推导 ① 和 ② 需要在控制环内进行一次 VLM 调用，并在 chunk 边界处相对于 \todo{Y} ms 的预算额外增加 \todo{X} ms 的每次 retrieval 开销。**如果 \todo{X} 落在预算之内且 success rate 匹配，则贡献 2 将被重述为一个协议/测量贡献，而非表示贡献** —— 这个 fallback 必须现在写好（见 §6 G4 的判定）。
@@ -506,11 +598,14 @@ e_i=\bigl(\mathbf{k}_i,\ \{v_i^{(\ell)}\}_{\ell=1}^{4},\ \beta_i,\ c_i,\ t_i\big
 | | `S_deploy` | `S_corpus` |
 |---|---|---|
 | 来源 | 评测期两台机器人自己 rollout + 写入门控 | 数百小时存量遥操语料离线灌入（**curated**） |
-| 规模 | \todo{~10³} 条 | \todo{10⁴–10⁵} 条 |
-| 用途 | **P1 / P2 / P3 与全部主结果**；Self-write 主张的唯一证据；在线增长曲线 | **仅**规模、串扰、P4 |
+| 规模 | \todo{~10³–10⁴} 条 | \todo{**10⁴–N_max**，明写 N_max} |
+| 用途 | **P1′ / P2 / P3′ 与全部主结果**；Self-write 主张的唯一证据；在线增长曲线 | **仅**规模、串扰、P4 |
 | 图表标题 | 无标注 | 必须写 `corpus-seeded` |
 
 Table I 的 ours 行 Self-write 脚注：`✓ for the deployment store; the scaling study uses a corpus-seeded store.`
+
+> **★ 规模据实收窄**：按实际语料核算，`S_corpus` 稳落在 **10⁴–3×10⁴** 量级，**够不到 10⁵**（家居长时程 episode 均长约 180 s → 40 h/本体 ≈ 800 episode/本体 × 12–18 段 ≈ 10k–14k 条/本体）。**不硬凑 10⁵**：报到实际能达到的 N_max，规模曲线做**对数下采样**（10², 10³, 10⁴, N_max）。
+
 
 ## 3.7 Fig. 2 设计（单栏，0.20 页）
 
@@ -544,18 +639,26 @@ Input: store M, frozen policy pi_b, key encoder q_b, alignment map h_b
 
 | # | 组件 | 内容 | 工时 | 关键路径 | 省工替换 |
 |---|---|---|---|---|---|
-| D1 | 片段分割 | 夹爪 open/close 状态机 + EE 速度过零；输出片段边界 | **1 周** | 是 | 禁止上学习式分段（省 2 周） |
-| D2 | 物体检测与跟踪 | 抓取前用检测器+跟踪；**抓取后用夹爪位姿代理**（刚性附着） | **3 周** | 是（②③ 共同前端） | 代理法把 6 周压到 3 周 |
-| D3 | 物体系与任务坐标系 | 由 D2 输出定义 object-anchored frame；③ 层轨迹变换 | **2 周** | 是 | — |
+| D1 | 片段分割 | **★ 双轨**。轨 A（**零依赖，立即可做**）= 夹爪 open/close 事件 ∪ **双臂任务系**速度过零 ∪ 固定时长上限（如 8 s），受最小片段长度约束；轨 B（感知就绪后）= 补约束坐标里程碑（铰链角 Δθ / 弧长 Δs / 重抓事件） | **轨A 1 周 / 轨B 1 周** | 轨A 是 | **禁止让主线任何一个数等待轨 B**；顺带报"轨A vs 轨B 对 precision@k 的影响"当一行便宜 ablation |
+| D2a | 铰链一次性标定 | 固定家电，标定夹具 + 尺量一次 | **0.5 周** | 是（confirmatory） | **★ 若家电采集期间未移动过，可追溯标定**——存量数据零重采变③层可用 |
+| D2b | DLO 拉头 + 刻度带 | 抓后夹爪位姿代理 + 轨道弧长 | **3 周** | 是 | — |
+| D2c | 叠衣语义关键点 | 检测器 + Cloth Funnels 式规范化前缀 | **4 周** | 是（F 族） | **MVP 中砍**（叠衣降 exploratory） |
+| D3 | 锚点系与任务坐标系 | 由 D2a/b/c 输出定义 anchor frame；③ 层轨迹变换 + `(T_abs,T_rel)` 拆分 | **2 周** | 是 | — |
 | D4 | ① 层生成 | 冻结 VLM 对首末帧 + 指令生成摘要；**禁止写入者像素坐标**；oracle 版另做 | **2 周** | 否 | 批处理离线跑 |
-| D5 | ② 层生成 | 由 ①+D2 构造子目标序列；oracle 版由演示脚本 | **1.5 周** | 否 | — |
+| D5 | ② 层生成 | 由 ①+D2 构造子目标序列（**两套 anchor 词表**）；oracle 版由演示脚本 | **1.5 周** | 否 | — |
 | D6 | key 编码器 ×4 + 对齐图 | 冻结编码器封装 + InfoNCE 训练脚本 | **2 周** | 是 | — |
-| D7 | store + 索引 + 生命周期 | 条目表、暴力 cosine（10⁵ 条足够）、FIFO+时效、删除 | **1 周** | 是 | **不做 ANN**（省 1 周，且删掉了一个空实验） |
-| D8 | 读出与注入 | 四条解码路径 + retarget/IK + Eq.(6) 注入 | **3 周** | 是 | **与 R-t-S 复现共用同一份代码**（省 4 周） |
-| D9 | 写入门控 | VLAC 或替代成功判别器 + progress-peak 截断 | **2–4 周** | 是 | VLAC 若可得取下界 |
-| D10 | 仿真 harness | 单模拟器内双机器人 + 2×2 因子评测 | **3 周** | 否（G3 后可砍） | 不进正文则只做 key 侧离线分析（省 2 周） |
+| D7 | store + 索引 + 生命周期 | 条目表、暴力 cosine（10⁴ 条足够）、FIFO+时效、删除 | **1 周** | 是 | **不做 ANN**（省 1 周，且删掉了一个空实验） |
+| D8 | 读出与注入 | 四条解码路径 + retarget/IK + **双臂 (T_abs,T_rel) 聚合改造** + Eq.(6) 注入 | **3 周** | 是 | **与 R-t-S 复现共用同一份代码**（省 4 周） |
+| D9 | 写入门控 | **VLAC-8b 可得（MIT，327 star，HF 可达）** + progress-peak 截断 | **1–2 周** | 是 | **HELP / VLAC-Cut 已实现 progress/idle/failure/recovery 分段**，D9 大概率能压到 1 周 |
+| D10 | 仿真 harness | 同一 MuJoCo 场景内换 **AgileX 官方 piper / piper_x / piper_h / piper_l 四套 URDF**（MIT，已下载至 `RAL2027/kinematics/`）+ 2×2 因子评测 | **3 周** | 否（G3a 后可砍） | 不进正文则只做 key 侧离线分析（省 2 周） |
 | D11 | 真机基础设施 | 双平台评测自动化、成对同 init/同噪声 rollout、复位、日志 | **4 周** | 是 | — |
-| D12 | 弱配对数据采集 | 10 任务 × 30 episode × 2 本体 | **2–3 周**（40–60 机器人小时） | **是（最被低估的一条）** | 第 1 周就启动 |
+| D12 | 弱配对数据采集 | 10–12 任务 × 30 episode × 2 本体 | **2–3 周**（31 机器人小时） | **是（最被低估的一条）** | 第 1 周就启动；**用户已确认可随机启动采集** |
+| **D13** | **★ PiperX 侧 openpi 移植** | policy input/output 类、norm stats、**按偏置腕重写 pinocchio+casadi FK/IK**（官方那份 28 KB 的 `piper_IK-ros2.py` 是按 Piper 硬编码的）、piper_sdk 驱动、相机标定 | **3.5 周** | **是（单点故障）** | **第 1 周设 FK 一致性硬验收**：20 构型，位置残差 <5 mm、姿态 <2°。**不通过就不要往下写任何 policy 代码** |
+| **D14** | **★ 8 个自动判据的夹具与传感** | AprilTag / 簧片开关（¥5）/ 印刷刻度带 / 俯视 RGB-D | **3 周** | 是，但**不依赖策略与记忆库，9 月即可开工** | 闭合缝分割与包内物体检测**改人工复核**（各约 100 trial × 5 s），砍掉两套视觉工程 |
+| **D15** | **★ demo 录制基础设施** | 第三方电影机位 + **rollout 元数据与视频帧同步落盘** + 角标数字录制时烧进日志 | **0.5 周** | **是（第一天就要做）** | 不做则 §4.10 第三段（harm 案例）永远拍不出来——它完全依赖能从日志检索出 `base 成功 & ours 失败` 的成对样本 |
+
+**★ 一个必须先做、成本半天的前置**：把 `pi0.py::sample_actions` 的 `jax.lax.while_loop` 展开为 Python for 循环 + 同 seed 数值一致性检查。**已核源码**：carry 就是 `(x_t, time)`，`x_t` 即 flow 中间态，`num_steps` 默认 10。**排在所有记忆库工程之前**——这是注入机制的最小可行验证。
+
 
 **合计 ≈ 26.5–29.5 周 ≈ 6.2–6.9 人月的纯工程**，另加实验执行 1.5 PM + 分析画图 1.0 PM + 写作 1.0 PM + 基座微调与调试 1.5 PM ≈ **11–12 人月**（不含额外 baseline 复现）。详见 §5.2。
 
@@ -593,9 +696,11 @@ Input: store M, frozen policy pi_b, key encoder q_b, alignment map h_b
 | body A | SR(A,S1) | SR(A,S2) |
 | body B | **SR(B,S1)** ← 因果估计量 | SR(B,S2) |
 
-- **落地路径**：LIBERO 建立在 robosuite/MuJoCo 上，**在同一套 LIBERO 场景/物体/相机位姿下替换第二个机器人模型并重跑 demo 回放**。可行性用 ≤1 周验证（**G3a**）。
+- **落地路径**：**在同一 MuJoCo 场景/物体/相机位姿下替换第二个机器人模型**——标的改为 AgileX 官方 `agx_arm_urdf` 的四套 Piper 家族 URDF（**MIT 许可，已下载至 `RAL2027/kinematics/`**）。这条从"可行性待验证"升级为"**已有现成资产**"。可行性用 ≤1 周验证（**G3a**）。
+- **★ ④轴必须改报二维 (位置误差, 姿态误差)**：Piper→Piper-H 与 Piper→Piper-L 的朴素复制**姿态误差同为 0.0°**（同架构，末端朝向完全一致），位置误差分别 0.98 cm 与 9.41 cm——**在④轴上它们是同一个点**，一维报法会画出假曲线。修正后这条阶梯反而更有力：**0°（同架构，任意尺度）vs 82.8°（异架构）——这个对比本身就是"架构差异 ≠ 尺度差异"的证明。**
 - **不可行则**：仿真退出正文，只保留 key 侧离线分析（Fig. 3 的一部分可先在仿真上跑），并在 §IV 用一句话说明这一决定。
-- **headroom 的制造方式（对抗 R2-B12）**：**不用样本饥饿**。保持每任务演示量足以让基座在训练分布内表现强劲（否则写入门控没有成功轨迹可写，memory store 近乎为空，测到的将是写入率而非迁移率），改为在**评测端**施加光照 / 干扰物 / 初始位姿 / 相机位姿扰动，把基座压到 **40–60%** 区间。§IV 必须写明选择这一 regime 的理由。
+- **headroom 的制造方式（对抗 R2-B12）**：**不用样本饥饿**。保持每任务演示量足以让基座在训练分布内表现强劲（否则写入门控没有成功轨迹可写，memory store 近乎为空，测到的将是写入率而非迁移率），改为在**评测端**施加扰动。
+  - **★ 但必须分族限定**（施工图原来那句"不需人为制造 headroom"只对 F 族成立）：**F 族不需要**——R-t-S 在同款双臂 PiPER 同任务上实测 39–48%，正落在窗口；**D 族必须做**——否则天花板（基座 SR 会落在 70–90%，20 对里可能只有 1–2 个不一致对，对 McNemar 零贡献）。具体：门初始开合角 `[0°,25°]` 均匀随机、家电本体位置 ±8 cm / ±10° yaw 随机、加 1 个遮挡干扰物；pilot 里把每个 D 变体的基座 SR 调进 **25–65%**。
 
 ## 4.2 真机设计
 
@@ -603,32 +708,86 @@ Input: store M, frozen policy pi_b, key encoder q_b, alignment map h_b
 
 | 层 | 定义 | 任务数 | 用途 |
 |---|---|---|---|
-| **S 层** | 两体皆可执行、底盘静止 | **12** | **唯一的 confirmatory 端点** |
-| **M 层** | 仅移动臂可（需底盘导航/变工作空间） | 2 | scope 说明 + 定性视频 |
-| **F 层** | 仅 FR3 可（需高刚度，如插装） | 2 | scope 说明 |
+| **S 层** | 两体皆可执行 | **12** | **唯一的 confirmatory 端点** |
+| **R 层** | 仅 PiperX 可（**reach 受限**，跨度超 Piper 626 mm 臂展） | 2 | scope 说明 + 定性视频 |
+| **W 层** | 仅 Piper 可（**腕部 roll 受限**，需 >±89° roll；Piper j4 ±100° vs X ±89°） | 2 | scope 说明 + 定性视频 |
 
-**S 层任务必须包含 ≥3 个“语言不可表达”任务**（对抗 R1-B4，全篇唯一能够结构性击败 instruction-only 对照的实验）：非语义化轨迹形状、指定接触/速度剖面。例：按图案擦拭、沿非规则路径推动、带特定进给节律的插销。**若没有这类任务，“记忆 ≠ 更好的 prompt” 无法证明。**
+> **R/W 层比原 M/F 层更有价值**：它们是**双向**的单侧任务，直接图示化"两个工作空间**互不包含**"（体素 **IoU=0.528**，Piper 被 X 覆盖 72.2%、X 被 Piper 覆盖 66.3%），在任务层面证伪"子集"直觉——正是旧 P3 机理死掉的原因。
+> R 层例：R1 折叠大号床单；R2 够到深式微波炉腔体后壁取物。W 层例：W1 拧瓶盖式大 roll 动作；W2 衣架挂取。
+
+### S 层的 12 个变体（任务粒度 = **族 × 物体实例 × 目标位形**，必须在 §IV 主动交代）
+
+| # | 变体 | 族 | exec+复位 | 判定 |
+|---|---|---|---|---|
+| F1–F4 | 叠短袖 T 恤 / 长袖衬衫 / 长裤 / 毛巾四折 | F | 3.5 min（**含拒收重做后约 4.0 min**） | rubric + 盲评 κ |
+| F5 | **叠 T 恤至指定外接矩形**（塞进给定抽屉） | F | 3.5 min | **全自动** |
+| D1–D4 | 开/关微波炉门、开/关洗衣机门（含卡扣与胶条压合） | D | 0.6 min | **全自动** |
+| Z1–Z3 | 拉开 / 拉合 / 放物入包→拉合 | Z | 2.1 min | **全自动** |
+
+**主分析同时在「全 12 个」与「客观 8 个」上跑**，作为稳健性检查——**论文主结论不建立在最有争议的判据上**。
+
+> **★ 但存在一个必须先解决的结构性缺口**：5 个任务族撑不起"12 个评测任务 + 不相交的 `T_base`"，且 E0 与"基座 SR 落在 20–60%"在只有 3 个族的结构下**近乎不相容**（折 T 恤 vs 折长裤基本是同一技能）。**两条出路都要走**：
+> 1. 把 4 个门变体换成 **4 台不同铰接家电**各 1–2 个变体（微波炉 / 洗衣机 / **抽屉（prismatic，不同约束类型）** / 柜门），把 3 个拉链变体换成 **3 个不同的拉链包**。硬件成本几百块。
+> 2. **增加族数 3→5**（加抽屉、加双臂交接/放置），总任务数保持 12–14，**n_eff 从约 4 抬到约 7**。
+> **必须在 G3b 冻结切分前做完。**
+
+**S 层任务必须包含 ≥3 个"语言不可表达"任务**（对抗 R1-B4，全篇唯一能够结构性击败 instruction-only 对照的实验）。**判据**：同一句自然语言指令对应多条成功轨迹分布，且它们的成功率显著不同。实取 4 个：
+
+| # | 任务 | 为什么语言表达不了 |
+|---|---|---|
+| **L1** | **F5 叠至指定外接矩形** | "把衣服叠好"不指定折线位置、折叠顺序与目标尺寸。要塞进给定抽屉，折线必须落在特定位置——这是**连续几何量**，用语言表达需要念出坐标，而坐标是写入者相机系的量，**与 body-agnostic 直接冲突** |
+| **L2** | **Z2 拉合时的卡阻恢复节律** | 拉头被布料咬住时须回退约 1 cm、由稳定臂重新张紧、再以特定速度推进。**接触/速度剖面，不是语义步骤**。（无力传感器时，卡阻判定改为**指令位置与实际位置偏差超阈**） |
+| **L3** | **F1/F2 双臂张紧-扫掠的相位差** | 一臂保持张力、另一臂扫掠，两臂间存在**相对位姿轨迹 `T_rel(t)` 与时序偏置**。**语言无法表达一条连续的相对位姿轨迹。★ 这是硬件变更带来的净收益——单臂方案不可能有这一类** |
+| **L4** | **D4 关洗衣机门的胶条压合剖面** | 门接触胶条后需一段特定的减速-加压-越过卡扣的力/速剖面 |
 
 **Intro ¶5 的措辞相应收窄**：`compared on a task set both bodies can execute`，并主动声明这是 embodiment gap 的**下界估计**。
 
-### 主端点（confirmatory，预注册，只有一个）
+### ★ 主端点：拆成两个预注册主端点（co-primary，Bonferroni 各 α=0.025）
 
-- **12 任务 × 20 成对 trial × 2 个 reader 方向**，成对 = **同初始状态 + 同 flow 噪声种子 ε**。
-- 每个 trial 跑两次：memoryless base 与 ours@L\*（L\* 由仿真/离线预选，**在查看真机结果之前锁定**）。
-- 统计：Clopper–Pearson 精确 CI；成对比较使用 McNemar，报告不一致对 `(n01, n10)`；pooled 数值用任务层 cluster bootstrap。
-- **效力**：12×20 = 240 成对 trial/arm，检测 10 pp 净增益的效力 ≈ 80%。
+> **核心问题一句话**：**这个任务集里，配对有效的任务没有统计头room，有统计头room的任务配不了对。**
+> 门族初始状态完全可复现但会天花板；叠衣族有真实头room 但**一件衣服的初始褶皱物理上不可复现**——而 McNemar、harm rate、成对 Δ 三个全文贯穿的量**全部建立在 matched initial state 上**。
 
-### P3 的检验方式（对抗 R2-B3）
+**(P-rigid)** D + Z 共 7 个变体，**成对 McNemar**（同初始状态 + 同 flow 噪声种子 ε）。D 族必须人为制造 headroom（见 §4.1）。
 
-**不做 trial 级差之差**（其方差约为单个成对比较的 ~4 倍，需要 ~640 成对 trial/方向）。改为**任务级配对符号检验 / Wilcoxon**：每个任务计算两个方向的 Δ，检验 `Δ(A→B) > Δ(B→A)` 的符号一致性。n=12 时全同向 p≈0.0005，10/12 时 p≈0.04。**P3 的效力由任务数而非 trial 数决定** —— 宁可减少每任务的 trials，也要保证任务数 ≥12。
+**(P-deformable)** F 共 5 个变体，**放弃 trial 级配对**，改**分层随机化**：每次重置后由脚本随机分配到 base 或 ours，用初始状态难度协变量分层；主量为 **0–4 分进度分的 stratified 均值差**；检验用**任务层 cluster bootstrap**。
+
+**HR 的定义随之分裂**（§IV 必须明写两者**不可 pooled 成一个数字**）：D+Z 用 `HR = n10/n`（per-trial）；F 用 `HR_dist = P(ours 失败|层) − P(base 失败|层)`。
+
+**★ 'matched initial state' 在可形变物上的可操作定义（三件事，缺一不可）**：
+- **(a) 容差化配对 + 拒收重做**：桌面印衣物轮廓模板；重置后拍俯视 RGB-D，只有 **mask 与模板 IoU ≥ 0.90 且主轴角差 <10° 且褶皱能量代理落在预设带内**才算合法初始状态，否则重做。**把达成的 IoU 直方图报进补充材料——让配对是测量出来的，不是假设出来的。**
+- **(b) A/A 噪声地板控制（不可砍，约 2.3 robot-hours）**：选 1 个 F 变体，**base 对 base** 跑 20 对，测不一致率 `π_d^AA`。**这就是 McNemar 的噪声地板**。理由：在 SR≈50%、初始状态方差大的情形下，**纯噪声就能给出 20–25% 的 n10**，把它写成 "memory-harm rate 25%" 是硬性误述——而 HR 是 Abstract 里主动宣称的诚实性指标。
+- **(c) 条件污染审计**：base 组与 ours 组的初始 IoU / 褶皱能量分布做 t 检验。
+- **另必须明写一条限制**：matched sampler seed ε **只控制第一个 chunk**，首个动作分叉后轨迹即发散——**seed 匹配对长时程任务是装饰性的**。刚体任务同样成立，**主动写出来比被问出来强**。
+
+### ★ 效力：`n = 785·π_d`，π_d 预注册并 pilot 实测
+
+McNemar 的效力由**不一致对数量**决定，不由 n 决定：
+```
+n = (z_{α/2}+z_β)² · π_d / δ²  =  785 · π_d      (δ=0.10, α=0.05, 1−β=0.8)
+```
+- `π_d=0.30` → n≈240（**这正好反推出施工图原来继承的那个数，但它从未被声明过**）
+- `π_d=0.50` → **n=392 对/arm** → 主端点从 48.9 h 涨到 **79.9 h**，总预算 152 → **约 183 h**
+
+**执行**：每族选 1 个变体各跑 15 对（可与 A/A 控制合并采集），读出族别 `π_d`，**在冻结主端点之前**决定加 trial 还是降效力目标。若 `π_d^F > 0.40`，F 族强制走 (P-deformable) 的连续型进度分。**§4.7 预算表的每一行都应标注其隐含 π_d。**
+
+### P3′ 的检验方式（三级，力度递增）
+
+**旧的任务级符号检验 n=12 是伪重复**：F1–F5 共享同一套关键点前端与同一折叠技能；D1/D2 是同一台微波炉的两个方向；Z1–Z3 是同一个包同一条拉链。族内相关 ρ≈0.6、族规模 m≈4 → **n_eff ≈ 4.3**；全同向时符号检验单边 p 从 **0.000244（n=12）** 变成 **0.0625（n=4）——不显著**。
+
+1. **方向检验**：**族级** cluster 重抽样（cluster = **族**，不是任务）或带族随机截距的混合效应模型。**报族聚类的 p 与 naive n=12 的 p 两个数，摘要里只准用前者。**
+2. **★ 排序检验（本设计的核心增量）**：逐任务的**离线 φ 差值** 与 **实测 Δ 差值** 的 **Spearman 秩相关**（族级 cluster bootstrap CI）。若显著，主张升级为 **"一个离线运动学统计量可以预测在线迁移不对称，无需部署"**——这比"存在不对称"强一个量级，且对系统集成者有直接价值。
+3. **机理确证对照（替代已失效的"锁底盘"）**：把双方写入条目都限制在**两者工作空间的交集核**（体素 IoU 的 52.8%）内重跑。若不对称性消失 → 机理坐实为限位包络覆盖率。**免费**（只是对条目做一次过滤）。
+
+**另外三条一起上**：用 **ordinal 进度分消除 tie**（D 族天花板时两方向 Δ 常恰为 0，符号检验**静默丢弃 tie**；**必须为 D/Z 也预注册 ordinal 阶梯** approach/grasp/partial-actuation/complete，并**明写被丢弃的 tie 数**）；**提高族数 3→5**（真正决定效力的量）；从 pilot 估出族内 ρ 并把 n_eff 计算写进 §IV。
 
 ### 其余 arm（exploratory，表中加标记，不进 Abstract）
 
 - 四层 value sweep：**4 个任务 × 15 trials × 4 层 × 2 方向**
-- 6 个控制 arm：4 个任务 × 15 trials
+- **8 个**控制 arm（含新增 A7/A8）：4 个任务 × 15 trials
 - 重实现的 Retrieve-then-Steer（同本体）：12 任务 × 15 trials × 2 本体
-- reader #3 admission：6 任务 × 15 trials × {base, ours}
+- **reader #3（单臂模式）admission**：6 任务 × 15 trials × {base, ours}
 - E5 时效性：3 个场景变更 × 15 trials × 3 条线
+
 
 ## 4.3 Baseline 表（含开源可得性与复现成本）
 
@@ -639,7 +798,8 @@ Input: store M, frozen policy pi_b, key encoder q_b, alignment map h_b
 | frozen base, no memory | 下界（成对 baseline） | 自有 | 0 | **是** |
 | **ours @ L\*** | 主方法 | 自有 | — | **是** |
 | **ours @ ④**（退化对照） | 显示分层的必要性 | 自有 | 0 | **是** |
-| **reimplemented Retrieve-then-Steer**（同本体） | 同本体检索 SOTA | **代码未开源**（仅匿名可视化链接）；t_min / 评估间隔 Δ / DTW 剔除阈值 / action horizon H **四个值论文未给** | **≈0 边际成本 —— 其注入器就是我们自己要实现的那一份** | **是** |
+| **reimplemented Retrieve-then-Steer**（同本体） | **同硬件同任务的直接前作**（不只是"同本体检索 SOTA"）——其附录 D 已在同款双臂 AgileX PiPER 上做 bimanual T-shirt folding（π0.5 42.0→50.0，50 trials/任务） | **代码未开源**（仅匿名可视化链接）；t_min / 评估间隔 Δ / DTW 剔除阈值 / action horizon H **四个值论文未给** | **≈0 边际成本 —— 其注入器就是我们自己要实现的那一份** | **是** |
+
 | ER / 双体数据 co-train | 上界，且是成本论据的唯一实证支撑 | 自有 | 训练 1–2 天 | **是（仅 4 个任务）** |
 | derive-on-read | 表示 vs 缓存的对照（R1-B3） | 自有 | 1 周 | **是（4 个任务）** |
 | instruction-only | 记忆 vs prompt 的对照（R1-B4） | 自有 | 3 天 | **是（4 个任务）** |
@@ -657,7 +817,15 @@ Input: store M, frozen policy pi_b, key encoder q_b, alignment map h_b
 - 存量语料三分，**按场景与物体实例互斥**（不是按 episode 随机切）：`base-finetune split` / `store split` / `eval split`。
 - **E0**：`base-finetune split` 的任务集与记忆评测任务集不相交，且基座**只用本体自己的数据**微调（无跨本体 co-train，否则 reader 已通过权重读过 writer 的数据）。
 - 对齐图：`T_align ∩ T_eval = ∅`，主表只报 held-out 数字。
+- **★ 实例 id 纳入互斥维度**：对折叠而言"另一件 T 恤"的关键点语义完全一致，泛化强度很弱。**eval 实例必须在颜色/尺码/材质上与 store 实例明确不同，并在审计行里报出来。**
+- **★ 基座能力必须落在 20–60% 窗口**（最容易被忽略却最致命的一条）：>70% → 天花板，注入增益淹没在噪声里；<15% → 写入门控收不到成功片段，库是空的。**这个窗口应当成为 `T_base` / `T_eval` 划分的设计目标**（例：微波炉门进 `T_base`、洗衣机门进 `T_eval`）。→ **新增 gate G3c**：10k 步小规模微调探一次窗口（约半天），**必须早于 G3b 的切分冻结**，否则改不动了。
+- **★ 预注册一条排除规则**：pilot 中基座 SR <15% 或 >70% 的 eval 任务，或调整其初始状态分布、或在冻结前替换。**规则必须在看到主结果之前定死。**
 - §IV 报一行审计：eval episode 与 store 条目的最近邻 key 相似度分布，以及与 base-finetune split 的重合度。
+
+**★ 必须预备的两个反驳（v5 §5.4）**：
+1. *"π0.5 的预训练里本来就有别的机器人的数据，reader 早就通过权重读过了"*——最锋利的一刀。**唯一 airtight 的答法**：所有 arm 共享同一个预训练底座，主端点是**同本体内配对的 Δ**（同 init state、同 sampler seed，McNemar），预训练先验对 base 和 ours 两个 arm 完全相同，**在数学上无法解释 Δ**。**这句话必须逐字写进 §IV，不能只写在 rebuttal 里。**
+2. *P3′ 跨的是两个不同的策略检查点*——这是真混淆。对策：每个方向的 Δ 只与**自己的 base** 比，并在主表额外报两具本体各自 base 在 `T_eval` 上的 SR，让读者看得见基线差。
+
 
 ## 4.4 消融清单（Table IV，6 个控制 arm + 共享池三条件）
 
@@ -670,7 +838,16 @@ Input: store M, frozen policy pi_b, key encoder q_b, alignment map h_b
 | A3 | **fixed-t0, no confidence gate** | 分离“门控退回基座”的贡献 |
 | A4 | **wrong-body / wrong-task 条目** | 负控制 |
 | A5 | **Replay-Only（跨体）**：检索条目 retarget 后开环执行 | 对齐 RECAP 的 Retrieval Only（RoboTwin unseen 26.0 vs 31.5）与 Dejavu 的 kNN-RAG（我们已一手核实：其 kNN-RAG “常常会降低性能”）。**不做会被点名。** |
-| A6 | **retarget-feasibility oracle**：真值物体位姿做 retarget 后单测运动学可行率 | 把 ③ 层失败里属于 IK/标定的部分剥出来 |
+| A6 | **retarget-feasibility oracle**：真值锚点做 retarget 后单测运动学可行率 | 把 ③ 层失败里属于 IK/标定的部分剥出来 |
+| **A7** | **★ ④ + 腕部重解算**（复制 j1–j3、自由重解 j4–j6） | **必须加**。实测该操作把姿态残差从 **82.8° 降到 6.7°**。不加这一行，审稿人会说层④是稻草人 |
+| **A8** | **★ coordination-oracle**（把 `T_rel` 作为硬等式约束求双臂耦合 IK，`T_abs` 为软目标） | oracle 阶梯的**第四桶**：双臂协同约束不可满足，是原三桶不覆盖的失败模式。**纯软件、零机器人小时** |
+
+**★ A7 的论证（这反而使论点更强，但必须主动写）**：腕部重解算**需要读者的运动学模型并求解 IK**——那正是层③的定义。所以 **`④+wrist-repair ≡ ③`，层④在跨本体下没有独立存在**。这把命题从"关节动作不能迁移"精确化为：
+
+> **关节动作的可迁移部分恰好等于它的任务空间投影；剩下的部分是本体私有的。**
+
+更强、更可证。**6.7° 不是 0**，它是 j1–j3 语义也不完全对应的残留。
+
 
 **crossover arm（去注入通路共线，仅仿真/4 任务，R2-B4）**：
 - X1：② 内容解码后走 Eq.(6)（已是默认，作为参照）
@@ -683,29 +860,54 @@ Input: store M, frozen policy pi_b, key encoder q_b, alignment map h_b
 3. `shared pool, tag-aware retrieval`（仅在读出时才使用 tag 决定回退层级）
 **条目按本体配平**：下采样到 min。理由必须写进 §IV：写入门控 recall ≈0.678 且两体基座 success rate 不同 → 自然写入率必然不等，这是 P3/P4 的隐藏系统性偏差。
 
-## 4.5 P1–P4 的检验方式与双向预期结论
+## 4.5 P1′–P5 的检验方式与双向预期结论
 
 | | 预测 | 检验方式 | 若成立 → 论文形态 | 若被推翻 → 论文形态（**必须现在写好**） |
 |---|---|---|---|---|
-| **P1** | cross-body SR 随抽象度上升；same-body SR 由内容保真度而非抽象度主导 | 两个离散对比：`SR_cross(①) − SR_cross(④) > 0`（pooled，任务层 cluster bootstrap CI）；`SR_same(oracle ①) ≈ or > SR_same(④)` | Fig. 4 两条曲线 + 内部工作点；Title 用 T1 | 若 cross-body 也随抽象度下降 → 结论变成“抽象不买单，跨本体损失全在 key/retarget”，与 P2 合并成一篇更聚焦的归因论文；Fig. 4 改为单调下降 + Fig. 5 承重 |
-| **P2** | 跨本体损失由 retrieval + retargeting 两项主导，而非 value 不可执行 | **oracle 阶梯**（下方） | Fig. 5 三桶加和；C4 成立 | 若 value 项主导 → 结论变成“检索可救、动作不可救”，直接支撑 ③ 层作为唯一可行层，论文重心移到 retarget 与分层回退 |
-| **P3** | 方向不对称，**归因于 viewpoint variability 而非 workspace inclusion** | 任务级配对符号检验（n=12）；**关键对照：移动臂锁底盘再跑一次，不对称性若消失则机理坐实** | §V-D 一段 + 一个符号检验 p 值 | 若无不对称 → 报 “no directional asymmetry detected at this power”，并给出效力说明；这不伤主线 |
-| **P4** | 共享池仅在 value 层级 ≥② 时净正；③–④ 层共享产生负迁移 | 三条件 × 层级的 2×3 表（Table IV） | §V-E 两行 | 若全层净正 → 更好的结果（共享无代价），改写为“在此规模下，我们没有观测到跨体串扰” |
+| **P1′** | **存在 ℓ\* 使 (a) 同本体 `SR_same(④) > SR_same(③)` 且 (b) 跨本体 `SR_cross(③) > SR_cross(④)`——即两曲线交叉**，预测 ℓ\* ∈ (③,④) | (a) 由 **G0.5** 判定：`SR_same(④) − SR_same(③) ≥ 10 pp`（同本体，成对，McNemar）；(b) 由主端点判定（pooled，族层 cluster bootstrap CI） | Fig. 4 两条曲线交叉；**交叉点本身才是 Fig. 4 的主张**；Title 用 T1 | **(a) 不成立 → 四层谱系框架当场死亡，切 cross-body admissibility framing，不等 G4。** 预注册文本必须现在就写进补充材料 |
+| **P2** | 跨本体损失由 retrieval + retargeting 主导，而非 value 不可执行 | **oracle 阶梯（六级五差，见下）** | Fig. 5 四桶加和；C4 成立 | 若 value 项主导 → "检索可救、动作不可救"，重心移到 retarget 与分层回退 |
+| **P3′** | **方向不对称由读者的关节限位包络对写者任务盒位姿的覆盖率决定，且可由纯离线运动学统计量 φ 预测方向与逐任务排序** | 三级：族级符号检验 + **Spearman 秩相关（核心增量）** + **工作空间交集核对照** | §V-D 一段 + 秩相关 p 值；主张升级为"无需部署即可预测迁移不对称" | 报 "no directional asymmetry detected at this power" + 效力说明；**并补一句限定性发现**：同形态本体对不存在"工作空间包含"这一在定基↔移动设置中驱动不对称的机制 |
+| **P4** | 共享池仅在 value 层级 ≥② 时净正；③–④ 层共享产生负迁移 | 三条件 × 层级的 2×3 表（Table IV），**条目按本体配平下采样到 min** | §V-E 两行 | 若全层净正 → 更好的结果，改写为"在此规模下未观测到跨体串扰" |
+| **★ P5（新增）** | **层④失败 ← 运动学架构**（任何固定的、无观测条件的关节空间标定映射的最优残差都超出任务容差一个量级）；**层③失败 ← 关节限位包络**（放宽限位即消失）。**两者不是同一个原因** | **已由离线实测支持**（见下）；真机侧只需确认 FK 一致性 | §V-C 两句 + 一张三档标定表 + 一张限位对照表 | **若真机 FK 残差 >5 mm → 全部离线数字作废，P5 撤回** |
 
-**oracle 阶梯（P2 的非循环分解，五级四差，全部可自动化 —— 对抗 R2-B10）**：
+**★ P5 的离线证据（一手复算，脚本在 `RAL2027/kinematics/`）**：
+
+| 标定映射 | 参数量 | 位置残差中位 | **姿态残差中位** |
+|---|---|---|---|
+| 朴素复制 `q'=q` | 0 | 23.55 cm | **82.8°** |
+| 逐关节仿射 `q'=s⊙q+b` | 12 | 11.11 cm | 52.4° |
+| **全线性 `q'=Aq+b`** | 42 | **7.10 cm** | **17.8°** |
+| sin/cos 提升线性 | 114 | 6.12 cm | 16.0° |
+
+- **拟合出的逐关节尺度** `s = [0.919, 1.010, 0.836, **−0.012**, **−0.064**, 0.638]` —— **j4/j5 的尺度约等于零，最小二乘对腕部关节直接放弃拟合。这是"同名关节语义不同"的直接定量证据（Piper j4 = 腕 roll，PiperX j4 = 肘平面 pitch），应做成一张图。**
+- **层③限位对照**：PiperX 真实限位 **80.8%** → 放宽到 ±189°（几何不变）**100.0%**。**架构对层③失败的贡献是 0.0%，全部 19.2 pt 来自限位。**
+- **容差扫描（预堵"IK 容差调出来的"）**：0.10 mm/0.06° → 80.5%；1 mm/1° → 80.0%；10 mm/10° → 86.0%。**容差放宽 100 倍只买到 +6 个点，80% 不是容差伪影。这张表必须放进补充材料。**
+- **正文的正确措辞**：*任何固定的（无观测条件的）关节空间标定映射的最优残差仍达 7.1 cm / 17.8°，超出任务容差一个量级。* **绝对不能只报 82.8°**——那是 by-construction 的稻草人，被发现后不是数字错误，是诚信问题。
+- **⚠️ 前置**：两台夹爪不同款，**上述全部数字需用实测 TCP 偏置重算后才能写进正文**（v5 §1.7 后果 B）。
+
+**oracle 阶梯（P2 的非循环分解，★ 六级五差，全部可自动化 —— 对抗 R2-B10）**：
 ```
 base (no memory)
   ↓ Δ_total
 cross-retrieved (normal cross-body retrieval)
-  ↓ Δ_key        ← 差 = key 侧损失
+  ↓ Δ_key         ← key 侧损失
 retrieval-oracle (force the correct writer entry for this task & phase)
-  ↓ Δ_retarget   ← 差 = retarget/标定损失
-retarget-oracle  (ground-truth object pose & task frame)
-  ↓ Δ_value      ← 差 = value 侧跨体不可用
+  ↓ Δ_limit       ← ★ 限位包络受限（实测 19.2 pt）
+limit-oracle     (relax reader joint limits, geometry unchanged)
+  ↓ Δ_geom        ← ★ 几何/架构不可达（实测 0.0 pt）
+retarget-oracle  (ground-truth anchor & task frame)
+  ↓ Δ_coord       ← ★ 双臂协同约束不可满足（A8 第四桶）
+coordination-oracle (T_rel as hard equality constraint)
+  ↓ Δ_value       ← value 侧跨体不可用
 same-body-value  (the reader's own entry for the same situation)
 ```
 - 正例定义来自**我们自己的 (task, phase) 标注**（片段边界天然给出 phase），不做事后人工归因。
-- 物体检测器在两个本体相机上的精度作为**协变量**报出（②③ 共享前端，必须暴露）。
+- **★ 限定域并明说**：oracle 阶梯**只在 D 与 Z 两族上跑**（锚点是铰链轴与拉链轨道，一次性物理标定，真值免费）；**§V-C 必须明写 F 族 "anchor-oracle not available"**——衣物关键点真值只能靠逐帧人工标注（估 1200–1800 次），这恰恰是该阶梯当初为对抗 R2-B10 而承诺要避免的"事后人工归因"。
+- **★ 预注册负值处理**：`Δ_key` 完全可能为负（强制"正确"的写者条目对读者运动学不可行）。**若任一 Δ < 0，禁止画堆叠柱状图**，改画阶梯折线并在正文声明"这是一串干预，不是方差分解"。
+- 锚点检测器在两个本体相机上的精度作为**协变量**报出（②③ 共享前端，必须暴露）。
+
+**★ 双臂失败模式必须用预注册的自动 first-fault 规则**：不做事后人工归因。连续记录两臂最小间距（URDF 可算）、`|T_rel(t) − T_rel_ref(t)|`、"一臂张开而另一臂正在扫掠"等事件，**时间上最早触发的事件即为归因类别**。类别至少覆盖：臂间碰撞、`T_rel` 漂移、角色反转、相位失同步、单臂中止。**一个日志脚本的成本，换掉一整轮"你怎么知道是这个原因"的质询。**
+
 
 ## 4.6 指标定义式（§IV 的 “Reporting protocol” 段，约 4 行，全表执行）
 
@@ -723,28 +925,67 @@ transfer rate           TR = SR_cross / SR_same   (context only; no claim rests 
 1. 每个报出 success rate 的格子**必须并列 IR**。任何 arm 若 `IR < 20%`，其 transfer 数字在表里**灰掉并标 n.i.（not interpretable）**。
 2. 每个 value 层级**同时报两列**：`gated`（门控开，系统读数）与 `forced`（关掉相似度门与 DTW 过滤，强制注入 top-1，记忆内容读数）。**P1 的主张建在 forced 列上；系统级增益的主张建在 gated 列上。** 这个改动零硬件成本，把 R2-B1 从致命降为可辩护。
 3. 有害率**同时报 gated 与 forced 两个版本**（gated 版可被门控刷低，forced 版才是记忆内容的有害性）。
+4. **★ 每个报出 success rate 的格子必须并列 reader 自身的 memoryless base SR。** 没有它，读者无法判断某任务的 Δ=0 是"记忆没用"还是"天花板/地板"。这一列同时是 tie 分析的输入。
+5. **★ HR 在 rigid 与 deformable 两族上定义不同，明写不得 pooled 成一个数字。**
 
 ## 4.7 机器人小时预算算式（进 §IV 正文，约 2 行 + 附录表）
 
+### 单次 rollout 时长（含复位）—— 这是原预算错得最狠的地方
+
+施工图一律用 1.5 min，对家居长时程任务错 2–3 倍。实测量级（**待用存量语料统计确认**）：
+
+| 族 | exec | 复位 | **合计/rollout** |
+|---|---|---|---|
+| 叠衣 F | 150 s | 60 s（抖开摊平） | **3.5 min** |
+| 门 D | 25 s | 10 s | **0.6 min** |
+| 拉链 Z | 90 s | 35 s | **2.1 min** |
+
+> **★ F 族的复位时长不能按 60 s 记账**：加了拒收重做之后，期望重置时间是 `60/p_accept`；若 `p_accept≈0.7` 则约 86 s，单次 rollout 从 3.5 涨到约 **4.0 min**。**这与 1.4 失败因子是相乘关系**（1.4 覆盖硬件故障，不覆盖重置拒收），不要混为一谈。
+
+跑一遍任务子集的耗时：**S12**（5F+4D+3Z）= **26.2 min**；**M6**（2F+2D+2Z）= **12.4 min**；**S4**（1F+2D+1Z）= **6.8 min**。
+
 ```
-robot-hours = sum over arms of  (#tasks x #trials x #rollouts-per-trial x minutes) / 60 x failure-factor(1.4)
+robot-hours = Σ_arm ( #rollouts × 该 arm 任务子集的平均分钟 ) / 60 × failure-factor(1.4)
 ```
 
-| arm | 任务 | trials | rollouts/trial | 分钟 | 小时（含 1.4×） |
-|---|---|---|---|---|---|
-| 主端点（2 个方向 × {base, ours}，成对） | 12 | 20 | 2 | 1.5 | **33.6** |
-| 四层 sweep（探索性） | 4 | 15 | 4 层 × 2 个方向 | 1.5 | **16.8** |
-| 6 个控制 arm | 4 | 15 | 6 | 1.5 | **12.6** |
-| R-t-S 复现（同本体 ×2） | 12 | 15 | 2 | 1.5 | **12.6** |
-| reader #3 准入 | 6 | 15 | 2 | 1.5 | **6.3** |
-| E5 时效性 | 3 个场景 | 15 | 3 | 2.0 | **6.3** |
-| ER / co-train 上界 | 4 | 15 | 2 | 1.5 | **4.2** |
-| **评测小计** | | | | | **≈ 92** |
-| 弱配对数据采集（D12） | 10 | 30 ep | ×2 本体 | — | **40–60** |
-| **总计** | | | | | **≈ 135–155 机器人小时** |
+| arm | 子集 | rollout 数算式 | 分钟 | 小时（×1.4） |
+|---|---|---|---|---|
+| **主端点**（2 方向 × {base, ours} 成对） | S12 | 2 dir × 20 pair × 2 = 80 遍全集 | 26.2 | **48.9** |
+| 四层 sweep（探索性） | S4 | 15 × 4 层 × 2 方向 = 120 遍 | 6.8 | **19.0** |
+| 8 个控制 arm（A8 纯软件不计） | S4 | 15 × 7 = 105 遍 | 6.8 | **16.7** |
+| R-t-S 复现（同本体 ×2） | M6 | 15 × 2 = 30 遍 | 12.4 | **8.7** |
+| **reader #3（单臂模式）准入** | M6 | 15 × 2 = 30 遍 | 12.4 | **8.7** |
+| **★ G0.5 交叉点 gate** | 1F+1D | 200 条条目离线 + 40 真机确认 | — | **2.3** |
+| **★ A/A 噪声地板控制（不可砍）** | 1F | 20 对 base-vs-base | 4.0 | **2.3** |
+| **★ π_d pilot** | 3 族各 1 | 3 × 15 对 × 2 | ~2.1 | **3.5** |
+| E5 时效性 | D+Z only | 3 场景 × 3 线 × 15 | ~1.35 | **4.2** |
+| ER / co-train 上界 | S4 | 15 × 2 = 30 遍 | 6.8 | **4.8** |
+| **评测小计** | | | | **≈ 119** |
+| **★ demo 增量**（§4.10.6） | — | 五段里三段纯复用主实验素材 | — | **1.8** |
+| D12 弱配对采集 | S12 | 12 任务 × 30 ep × 2 本体（×1.2 重拍） | 2.18 | **31** |
+| **总计** | | | | **≈ 152 robot-hours** |
 
-**必须写进正文的一句（用工作量透明度换 trials 数）**：
-> 跨本体 trials 需要进行物理本体更换与复位，因此其单位成本高于同一本体 trials；因此我们在报告 trial 数的同时也报告 robot-hours。总计：\todo{} robot-hours，历时 \todo{} 周，覆盖两个平台。
+### ★ 一个错误假设被推翻带来的红利（必须改写正文）
+
+> 施工图原文："跨本体 trials 需要进行物理本体更换与复位，因此其单位成本高于同一本体 trials"
+
+**这在新硬件下是错的。** Piper 与 PiperX 是**两套独立台架**，reader swap 只是换台跑，**没有任何物理拆装，且两台可并行运行**。正文改写为：
+
+> Two platforms run in parallel; a cross-body trial costs the same as a same-body trial. We report robot-hours alongside wall-clock.
+
+**wall-clock**（按 **3 productive h/day/台**，非 5——家居长时程 + 布料人工复位 + 每台需一名操作员）：152 h / 2 台 = 76 h/台 ÷ 3 = **约 25 个工作日/台 ≈ 5 周/台**。
+**唯一的串行依赖**：写者必须先产出条目，读者才能评测 → 分两相：**相 1 双台并行写入**，**相 2 双台并行读取**。
+
+### 若超预算，按此顺序砍
+
+1. E5 时效性（−4.2）→ 降级为 discussion 一句
+2. ER/co-train 上界（−4.8）→ 但这是"E0 这条主张的标价"的唯一实证，**尽量保**
+3. reader #3（−8.7）→ 会把 R1-B5 变回未解决风险，须在 Limitations 明写
+4. 四层 sweep 从 4 任务降到 3（−4.8）
+5. 主端点 trials 从 20 降到 15（−12.2，效力从检测 10 pp 降到约 12 pp）
+
+**绝不砍**：G0.5、A/A 控制、π_d pilot（三者合计 8.1 h，是全部统计主张的前提）；S 层任务数不得低于 12；**族数不得低于 4**。
+
 
 ## 4.8 §V 的叙述顺序（2.05 页怎么用）
 
@@ -752,17 +993,110 @@ robot-hours = sum over arms of  (#tasks x #trials x #rollouts-per-trial x minute
    **预写的 fallback 段落（若重标定后跨本体 precision 显著高于 chance）**：结论改为“key 侧是可恢复的，但需要一个 alignment map，而其成本我们会报告”—— 这反而直接支撑我们的对齐图，叙事更强。
 2. **V-B 可迁移性谱系**（0.45 页 + Fig. 4）：四层 × {cross, same} × {oracle content, automatic content}，gated 与 forced 两列；derive-on-read 与 instruction-only 并列。
 3. **V-C 损失流向何处**（0.35 页 + Fig. 5）：oracle 阶梯三桶。
-4. **V-D 方向性**（0.20 页）：P3 符号检验 + 锁底盘对照 + 两个 writer 的条目质量统计（条目数、门控分分布、任务覆盖）。
+4. **V-D 方向性**（0.20 页）：P3′ 族级检验 + **Spearman 秩相关（离线 φ 预测在线 Δ）** + **工作空间交集核对照**（把双方写入条目都限制在体素 IoU 的 52.8% 内重跑；不对称若消失则机理坐实）+ 两个 writer 的条目质量统计（条目数、门控分分布、任务覆盖）。
 5. **V-E 共享、规模与危害**（0.35 页 + Table IV）：共享池三条件、corpus-seeded 规模下的 precision@k 下降曲线与跨体误检率、harm rate。
-6. **V-F 接纳一个 reader 的成本**（0.20 页）：reader #3 的 admission cost 三列实测表（paired episodes / GPU-minutes / wall-clock）vs 同 pair 上的 target 侧微调；E5 时效性交叉点三条线。
+6. **V-F 接纳一个 reader 的成本**（0.20 页）：reader #3（单臂模式）的 admission cost 三列实测表（paired episodes / GPU-minutes / wall-clock）vs 同 pair 上的 target 侧微调；E5 时效性交叉点三条线。
 7. **主表 Table III 贯穿 V-B/V-D**（0.28 页）。
 
-## 4.9 必须在 §IV 主动交代的四件事（各一句，少任何一句都会在 rebuttal 变成一轮质询）
+## 4.9 必须在 §IV 主动交代的**七**件事（各一句，少任何一句都会在 rebuttal 变成一轮质询）
 
-1. 两个基座策略都在部署前用存量数据微调过，且微调任务集与记忆评测任务集不相交（E0）。
-2. `S_deploy` 与 `S_corpus` 的条目数、episode 数与来源。
-3. 跨本体 trial 的单位成本（换本体 + 复位）与总机器人小时数。
-4. 单 checkpoint、单策略种子；真机做不了 3 seeds，用任务层 bootstrap 代替 seed 方差（主动说明比被问强）。
+1. 两个基座策略都在部署前用存量数据微调过，且微调任务集与记忆评测任务集不相交（E0），**且各自只用本体自己的数据**（无跨本体 co-train）。
+2. `S_deploy` 与 `S_corpus` 的条目数、episode 数与来源；**规模写实际 N_max，不硬凑 10⁵**。
+3. **两个平台并行运行，跨本体 trial 的单位成本与同本体相同**；同时报 robot-hours 与 wall-clock。
+4. 单 checkpoint、单策略种子；真机做不了 3 seeds，用**族层 bootstrap** 代替 seed 方差（主动说明比被问强）。
+5. **★ 每条自动判据在约 50–100 个人标样本上报一次 precision/recall**，与 VLAC 写入门控的标定**用同一批数据、同一套流程**。（"12 个中 8 个全自动"偏乐观：F5 依赖目标矩形标定、Z1–Z3 依赖模板匹配与分割阈值、D1/D3 依赖 AprilTag 不被门体自遮挡。）
+6. **★ 初始状态配对容差与达成的 IoU 直方图 + A/A 噪声地板 `π_d^AA`**；F 族的配对只能称 "state-matched to within a pre-registered tolerance"，**绝不写 identical initial state**。
+7. **★ ④层存物理单位，读出时由读者用自己的 norm stats 重新归一化**——防止④层跨体失败中混入纯归一化失配这个平凡混淆。**必须进正文，不是实现细节。**
+
+**另必须主动写的三条（可并进上面或单列）**：
+- **环境非平稳性**：拉链数百次开合后齿列磨损、T 恤折 300 次后形成固化折痕——**等于环境本身携带了"记忆"，会系统性偏向后跑的那个条件**。对策：每变体 **≥3 件物理相同实例**轮换并记录 instance id；配对内随机化先后；**漂移审计（一行，免费）**——把 base arm 的成功/进度分对 trial 序号做回归，报斜率与 CI。
+- **盲评**：κ 度量 reliability 不是 validity。标注者只看末帧、文件名随机化、条件剥离、base 与 ours 交错混排；每批嵌入约 20 张 anchor items；**至少一名标注者不是本文作者且不知道假设**；**κ 报在盲评批次上**；**重置者也要盲**（脚本只在重置完成后才抽取条件）。
+- **F1–F4 判据的一处必改**：施工图写的"中心厚度 ≥ k × 单层厚度"**物理上测不出来**（T 恤单层 0.5–1 mm、四层 2–4 mm，消费级深度相机 0.6 m 上 RMS 噪声 2–5 mm，布料低纹理更差）。**改用面积判据**：`A_final ∈ [A0/2^n × (1−τ), A0/2^n × (1+τ)]`，`A0` 为摊平俯视 mask 面积、`n` 为预注册折叠次数、`τ≈0.20`。**"揉成一团"被下界拒掉，折不到位被上界拒掉，且对深度噪声免疫。**
+
+## 4.10 ★ 真机 demo 规划
+
+> **定位**：demo 不是用来展示成功率的——表格已经干了那件事。**demo 的唯一职责是让一个怀疑的审稿人在 15 秒内相信一件他本来不信的事。**
+> 素材**必须在主实验跑的同时录**，不另开一轮（见 §4.10.6）。
+
+### 4.10.1 先确定"什么是没人拍过的"
+
+| 已有工作的视频拍了什么 | 我们不能重复的 |
+|---|---|
+| R-t-S：冻结策略 + 记忆让**同一台**机器人变好（**同款双臂 PiPER、同样冻结 π0.5、叠 T 恤 42.0→50.0**） | ❌ "记忆让机器人叠衣服变好"——拍这个等于自证增量 |
+| RECAP：往检索池加演示、不重训就会新任务 | ❌ "不重训学新任务" |
+| RAM：检索 affordance 迁到别的机器人，**但库是离线静态第三方语料** | ❌ "跨本体读一个预先建好的库" |
+| GR00T：跨本体，但**要更新参数** | ❌ 任何含训练步骤的迁移 |
+| MimicDroid / RoboTTT / Instant-Fold：人类视频 → 机器人，**用完即弃** | ❌ in-context 单次演示 |
+
+> **没有一个拍过：一台机器人在自己部署中产生的经验，被另一台机器人读走，中间没有任何重训。**
+> **这就是那一枪。全片的结构都围绕它。**
+
+### 4.10.2 分段脚本（总长约 3 分钟）
+
+| 段 | 画面 | 角标 | 它证明什么 | 前置条件 |
+|---|---|---|---|---|
+| **一（40 s）唯一真正重要的那一枪** | Piper 反复尝试某变体，失败 2 次、第 3 次成功 → **不切黑场**推到 PiperX，同一变体同一初始状态 → 先跑无记忆基座（失败）→ 再跑读取记忆（成功） | `entry written · 0 parameters updated` + **从 Piper 成功那刻开始走的真实墙钟计时器** | 计时器停在几十秒。**这个数字是全片最有说服力的东西**——"跨本体迁移"在所有其他论文里意味着几小时到几天的重训 | 需 Piper 基座 SR 落在 30–50% 的变体（失败 2 次再成功是自然发生而非摆拍）；写入门控在线跑通 |
+| **★ 一的加强版** | Piper 成功后**断电、推出画面**，再让 PiperX 读 | — | 同时干掉"两台是不是在实时通信"，并把"**记忆比写它的身体活得久**"变成字面画面 | — |
+| **二（50 s）这才是论文的贡献** | **同一条条目、同一初始状态、同一台 PiperX，只换读出层级**：④直接关节回放 → 姿态歪掉、抓空、失败；③锚点系接触点运动 → 成功。并排 | 层级标签 | 把**交叉点**从一条曲线变成**看得见**的事：同一段经验在一个层级上是废的、在另一个层级上是好的。**没人拍过，因为没人分层存** | **G0.5 已确认交叉点存在**；④层回放必须用**物理单位**，否则失败会混入纯归一化失配这个平凡原因 |
+| **三（30 s）诚实本身就是差异化** | 一个**读了外体条目反而变差**的案例 → 置信度门控挡下 → 回退基座 | harm 标记 + IR | 三件事同时兑现：Abstract 主动宣称的 harm rate；**"相似度门看不见可执行性"**；以及"我们知道它什么时候不该跨"。**大部分 demo 不敢拍失败，审稿人看到你敢拍，对前两段的信任度会明显上升** | **要先"打捞"到这样的案例**——全片唯一需要专门找的素材 |
+| **四（30 s）机理而非现象** | Piper→PiperX 成功；反向同任务失败。**失败瞬间叠腕关节角度条**，显示撞到 Piper j5 的 ±70° 限位 | 字幕 `the reader's wrist envelope, not the workspace size` | 把 **P3′** 从一个 p 值变成**看得见的物理原因**；同时预先堵掉"你们的 gap 就是工作空间大小差异"（已被 IoU=0.528 证伪，但视频比文字快） | 需挑一个真会触限的变体——由**离线 per-task φ** 预先筛出候选 |
+| **五（20 s，可选）换读者的代价** | **单臂模式读者**读双臂条目：③④结构性不可读 → **分层回退**到②层子目标序列 → 仍能完成，只是慢、精度低 | 回退层级标出 | 兑现 "admitting a new reader costs \todo{N} paired episodes and no policy gradient"；也是 D6 通过 own-task-competence 判准的可视证据 | — |
+
+### 4.10.3 任务选角
+
+| 任务 | 派什么用场 | 理由 |
+|---|---|---|
+| **拉链（Z）** | **第一、二段主角** | 成败**二值可见**（拉链开没开一眼看到）；时长适中（2.1 min）；③层的**弧长锚点可以直接在画面上叠一条进度条** |
+| **门（D）** | 第四段方向不对称 | 腕部限位的故事最干净；开合角可视化容易；单次仅 0.6 min，可连拍多组 |
+| **叠衣 F5（叠至指定外接矩形）** | "语言不可表达"的证据 | 旁边**并排放 instruction-only 对照，让它折出一个塞不进抽屉的形状**——这一个对比就证明了"记忆 ≠ 更好的 prompt"（对抗 R1-B4） |
+
+### 4.10.4 四条让它经得起看的规矩
+
+1. **成对试次连拍 3–4 组，不要只放一组。** 一组是轶事，四组同向才是证据。**实时不剪**，加速必须标注倍率。
+2. **屏幕上挂 injection rate。** 论文报它，视频也报它——预先堵掉"你是靠多弃权刷高的"（R2-B1）。
+3. **无记忆基座的尝试必须完整播完**，包括它挣扎的过程。只放我方成功片段是 demo 里最容易被识破的作弊。
+4. **每段角标写清 trial 计数**（第几组 / 共几组），不给"精选"留空间。
+
+### 4.10.5 不要拍的
+
+- ❌ **"记忆让机器人叠衣服变好"**——R-t-S 已拍过
+- ❌ **长时程炫技**（抽衣→叠→入篮一镜到底）。好看，但它证明的是**策略能力**不是**记忆能力**
+- ❌ **记忆库规模曲线的动画**。那是表格的活
+- ❌ 任何含"训练中…"进度条的镜头——与 "no gradient once deployed" 直接冲突
+
+### 4.10.6 预算与录制纪律
+
+**核心原则：demo 素材在主实验跑的同时录，不另开一轮。**
+
+| 段 | 素材来源 | 增量机器人小时 |
+|---|---|---|
+| 一 | 主端点的成对 trial（Z 族）+ **断电推走那一镜需专拍** | **+0.5** |
+| 二 | 四层 sweep 的③/④两档（本来就要跑） | **0**（纯复用） |
+| 三 | **需要打捞**：从全部 trial 日志筛 `base 成功 & ours 失败` 的成对样本，回放复现 | **+1.0** |
+| 四 | P3′ 的双向 trial（本来就要跑） | **0**（纯复用） |
+| 五 | reader #3 准入实验（本来就要跑） | **0**（纯复用） |
+| F5 vs instruction-only | 对照本来就在消融里 | **+0.3**（补拍并排机位） |
+| **合计增量** | | **≈ 1.8 robot-hours** |
+
+**★ 三条录制纪律必须从第一天就执行，否则事后补拍成本是这个数字的 10 倍**：
+
+1. **第三方电影机位从第一个 trial 就架好并常开。** 实验用的三路相机（base + 双腕）画幅和角度都不适合出片。补一个固定第三方机位全程录制，事后只剪辑不重拍。
+2. **每条 rollout 的元数据必须与视频帧同步落盘**（trial id / 方向 / 层级 / 条件 / injection 与否 / 成败）。**第三段的"打捞"完全依赖这个**——没有它就得靠人肉翻录像。
+3. **所有角标（计时器、injection rate、回退层级、trial 计数）在录制时就烧进日志**，剪辑时叠加。**事后估算的数字不能上屏。**
+
+### 4.10.7 与 gate 的关系
+
+| Gate | 对 demo 的含义 |
+|---|---|
+| **G0.5**（9-05） | **不过则第二段拍不出来**（无交叉点则③④没有对比）。demo 结构改为：第一段 + 第三段扩写为主体（cross-body admissibility framing 的可视化） |
+| **G2a**（9-26） | 通过则第一、二段的③层素材可开始录 |
+| **G5**（12-19） | 首批跨本体真机数出来即可拍第一段样片，**不要等到 G6**——早拍一版能暴露机位与角标问题 |
+
+### 4.10.8 一句话
+
+> **第一段证明"能跨"，第二段证明"为什么能跨"，第三段证明"我们知道它什么时候不该跨"。**
+> 三段拍成，这个 demo 就没法被归到任何现有工作里。
+
 
 
 ---
@@ -791,69 +1125,110 @@ robot-hours = sum over arms of  (#tasks x #trials x #rollouts-per-trial x minute
 
 ## 5.2 组件工程量 → 人月 → 与 6.5 个月计划的对账
 
-| 模块 | 人月 |
+> **★ 2026-08-24 重估**：施工图原自评 ≈11 PM，硬件变更后的净增量如下。
+
+| 项 | 周 |
 |---|---|
-| 数据/标注管线（D1–D5：分段、物体跟踪、任务坐标系、①②生成） | 2.5 |
-| store / 索引 / 生命周期（D7） | 0.25 |
-| 四种 key 编码器 + 对齐图（D6） | 0.5 |
-| 读出与注入 + retarget/IK（D8，**含 R-t-S 复现**） | 1.5 |
-| 写入门控（D9） | 0.5–1.0 |
-| 仿真 harness（D10，G3a 通过才做） | 0.75 |
-| 真机基础设施（D11：双平台、基座微调、成对 rollout 自动化、复位、日志） | 1.5 |
-| 弱配对数据采集（D12） | 0.75 |
-| 跑实验 / 分析 / 画图 | 1.5 |
-| 写作 | 1.0 |
-| **合计（不含额外 baseline 复现）** | **≈ 10.75–11.25 PM** |
+| 叠衣关键点前端（原 D2 的"抓后夹爪代理"3 周方案对布料只保住一半） | +4 |
+| 铰链前端与夹具 | +1.5 |
+| 拉链 DLO / 拉头 / 刻度带 | +3 |
+| 双臂 `(T_abs,T_rel)` retarget 与聚合改造 | +2.5 |
+| 分段规则重写（双轨） | +1.5 |
+| **PiperX openpi 移植（D13）** | **+3.5** |
+| 几百小时转 RLDS + idle filter + TB 级存储 IO | +2 |
+| 8 个自动判据的夹具与传感（D14） | +3 |
+| VLAC 在 500 条留出 rollout 上的 precision/recall 标定 | +1 |
+| embodiment ladder（夹爪档 + 仿真档 + 锁关节 sweep + 单臂 reader） | +1.5 |
+| 两具本体各一次基座微调（而非一次）+ SR 窗口探针 | +2 |
+| demo 录制基础设施（D15） | +0.5 |
+| **小计** | **+26 周** |
+| 扣掉移动臂消失省下的 | −2 周 |
+| **净增量** | **≈ +5.5 PM** |
 
-**对账**：6.5 个月 × 1 FTE = 6.5 PM → **缺口约 1.7 倍**。
-- **≥2 FTE**：执行本大纲的完整版（含仿真 2×2、reader #3、E5、6 个控制 arm）。
-- **1.5 FTE**：执行 §5.3 的 MVP。
-- **1 FTE**：不要启动本课题的完整形态；改做 §6 G4 的负面结果形态（纯归因研究）。
+**总计 ≈ 16–16.5 PM / 28 周 → 需要 2.5 FTE。**
 
-**三个省工替换（合计省 1.5–2 PM，已计入上表）**：
-1. 时间分段用夹爪状态机，不用学习式分段（省 0.5 PM）。
-2. 物体 6-DoF 位姿在抓取后用夹爪位姿代理，只在抓取前用检测器（②③ 感知从 3 PM 压到 1.5 PM）。
+- **≥2.5 FTE**：执行完整版。
+- **1–1.5 FTE**：**执行 §5.3 的 MVP，不要中间态。**
+- **<1 FTE**：不要启动本课题的完整形态。
+
+**robot-hours 侧**：152 h，两台并行，按 3 productive h/day/台 → **约 25 个工作日/台 ≈ 5 周/台**；再加 D12 的 31 h（约 2 周/台）。base fine-tune（两具 × 60k 步 @bs256，H20 上每具 3–5 天，**且大概率要重训一次**才能把 `T_eval` SR 调进 20–60% 窗口）排进去 → **policy 就绪最早 2026-12-01，与 G5(12-19) 几乎顶格**。
+
+> **★ G5→G6 的 6 周要塞下 119 robot-hours + 对齐图训练 + 8 个控制 arm。任何一次重训就直接撞穿 G6。必须留 ≥1.5 周 buffer——现在这个排期的 slack 是 0。**
+
+**三个省工替换（合计省 1.5–2 PM，已计入）**：
+1. 时间分段用**轨 A 双轨规则**（夹爪状态机 + 双臂任务系速度过零 + 时长上限），不用学习式分段，且**不等感知前端**。
+2. 锚点估计：铰链走**一次性标定**（0.5 周，若家电未移动过可**追溯标定**）；布料走 **point-track**（不需 6-DoF 位姿估计）。
 3. **Retrieve-then-Steer 的复现与我们自己的注入器是同一份代码**（省 1 PM），且这在论文里同时是一个极强的受控对比论据。
 
-## 5.3 最小可发表版本（MVP，1.5 FTE / 3.5 个月）
+## 5.3 最小可发表版本（MVP，1 FTE / 6.5 个月，≈9–10 PM）
+
+> **这是真正推荐的形态**，除非确认 ≥2.5 FTE。**把 confirmatory 从"叠衣撑谱系"换成"门 + 拉链 + 单臂 reader 撑谱系"。**
 
 **保留**：
 1. 两台真机、共享单库、双向读写、**E0**（零梯度的唯一证据）。
-2. value 谱系降为**三点 ①③④**（砍 ②：它与 ③ 共用感知前端且更贵；④ 免费，作退化对照）。
-3. **P1（三点）**，允许无内部工作点 —— 若单调则报“最优点在端点”并同步改 Fig. 4 与 Contribution 2。
-4. **P2 归因（oracle 阶梯）** —— 最便宜且最独有的分析，**不可砍**。
-5. **P3 方向不对称** —— 跑双向本来就要跑，免费。
-6. **per-trial memory-harm rate + injection rate**。
-7. **derive-on-read 与 instruction-only 两个对照**（4 个任务）—— **不可砍**。
-8. 真机：**8 任务 × 20 成对 trial × 2 方向 × {base, ours}** ≈ 45 机器人小时。
+2. **7 个客观自动判定的变体**：4 个铰接家电（**微波炉 / 洗衣机 / 抽屉 / 柜门**，解决伪重复）+ 3 个**不同的**拉链包。
+3. **3 个 value 层（①③④）**——砍②（与③共用前端且更贵；④免费作退化对照）。
+4. **P1′（三点）+ G0.5 交叉点 gate**。
+5. **P2 归因（oracle 阶梯六级五差 + `Δ_retarget` 拆 limit/geom 两项）**——最便宜且最独有，**不可砍**。
+6. **P3′ 方向不对称**（双向本来就要跑，免费）+ **P5**（离线已成立）。
+7. **per-trial memory-harm rate + injection rate + base SR**。
+8. **derive-on-read 与 instruction-only 两个对照**（4 任务）——**不可砍**（R1-B3/B4 的解药）。
+9. **A7（④+腕部重解算）**——不加会被判稻草人。
+10. **单臂模式 reader 作第三具本体**（零硬件成本，通过全部五条判准）。
+11. **A/A 控制 + π_d pilot**（8.1 h，全部统计主张的前提）。
+12. **demo 五段**（增量仅 1.8 h）。
+13. 真机：**7 任务 × 20 成对 trial × 2 方向 × {base, ours}** ≈ 45 robot-hours；加单臂 reader、A7、对照与 pilot ≈ **75–85 robot-hours**。
 
-**砍掉**：仿真全部结果（只作内部 gate）；RoboMME 报数；P4 降为一行；ANN 延迟曲线；删除泄漏探针；reader #3（降级为一句 limitation：*"admitting a further reader is not evaluated here"* —— **注意这会把 R1-B5 变回未解决风险，必须在 Limitations 明写**）；E5（降级为 discussion 一句）；除 R-t-S 之外的全部 baseline 复现；Intro 成本段。
+**砍掉**：叠衣全族（降为 exploratory 定性视频 + scope 说明）；②层；套垃圾袋；仿真全部结果（只作内部 gate）；RoboMME 报数；P4 降为一行；ANN 延迟曲线；删除泄漏探针；E5（降级为 discussion 一句）；除 R-t-S 之外的全部 baseline 复现。
 
-**MVP 仍然成立的理由**：论文的不可替代性在“两台都部署的真机 + 更换 reader 无需策略梯度 + 同一协议下的谱系测量与损失分解”，不在 sweep 的宽度。
+**这一换解掉三件事**：砍掉最贵的感知（叠衣关键点前端 4 周）与最有争议的判据（rubric + κ + 人评分级）；砍掉 G2b 依赖，G2a 成为唯一的③层 gate；工程量从 16.5 PM 落到 **≈9–10 PM**。
+
+**代价必须诚实写进 Limitations**：
+> 门与拉链的双臂耦合度低，因此我们报告的谱系展开幅度是**下界**；"紧耦合可形变任务上谱系更陡"作为**预注册但未检验的预测**留给 future work。
+
+**二选一的规则**：如果坚持要叠衣进主表（它确实是唯一能撑开谱系的族），**那就砍拉链**。**不要两个都留。**
+> **2026-08-24 更新**：拉链的力/触觉顾虑已排除（拉链任务已训练成功、数据可用；③层用抓后夹爪位姿代理＝本体感觉；成功判据在释放回 home 后的静止帧上测——两处都绕开了触觉文献里的遮挡机理）。所以这条规则回到"由预算与工期决定"，而不是由硬件决定。**MVP 推荐仍是门 + 拉链 + 单臂 reader**（拉链的③层前端最便宜——抓后夹爪位姿代理，零检测器）。
+
+**MVP 仍然成立的理由**：论文的不可替代性在"**两台都部署的真机 + 更换 reader 无需策略梯度 + 同一协议下的谱系测量与损失分解 + 一个可预测迁移不对称的离线统计量**"，**不在 sweep 的宽度**。
+
 
 
 ---
 
 # 6. Go/No-Go 检查点
 
-今天 **2026-08-22**，目标投稿 **2027-03-10**（RA-L 滚动）。每个 gate 必须由具体的人在当天交出一个**数**，不接受“还在调”。
+今天 **2026-08-24**，目标投稿 **2027-03-10**（RA-L 滚动）。每个 gate 必须由具体的人在当天交出一个**数**，不接受“还在调”。
 
 | Gate | 日期 | 交付物 | No-Go 判据 → 论文变成什么形态 |
 |---|---|---|---|
-| **G0** | **2026-08-29** | (a) `PORTMEM`/`XEM` 重名检索结果；(b) VLAC 权重可得性核实；(c) 存量语料的双本体任务重合度审计（有多少任务两台都做过） | (c) 若重合任务 <6 个 → 立刻把 D12 采集扩到 12 任务并推迟 G3；(b) 若 VLAC 不可得 → 写入门控改为遥操隐含标签 + 轻量成功分类器，Intro ¶4(e) 的 why-now 论据同步改写 |
-| **G1** | **2026-09-12** | **Fig. 3 两联图（纯离线，无需策略、无需真机 rollout）**：四种 key × 四种条件的分布 + 重标定到同弃权率后的 precision@10 / AUC vs chance | 若四种 key 在重标定后 precision@10 全部 ≤ chance → 主结果改为 language-keyed only，P2 的答案定为“key 侧且不可修复”，对齐图从方法降级为一个失败的 ablation，论文重心全部移到 §V-C 的归因 |
-| **G2** | **2026-09-26** | **③ 层 object-anchored 坐标系的跨本体开环重放误差**（各 50 条 episode，先仿真、再真机空跑）：末端轨迹误差 + 接触点命中率 | 误差 >3 cm 或接触点命中 <60% → **P1 立刻降为三点谱系**（①③④ 或 ①②④，取表现好的），同步改 Fig. 1(b)、Fig. 4 与 Contribution 2 措辞。**这是最容易烂尾的一环**，见下 |
-| **G3a** | **2026-10-03** | 单模拟器内换第二个机器人模型 + 重跑 demo 生成的可行性（≤1 周验证） | 不可行 → 仿真退出正文，只做 key 侧离线分析，D10 的 0.75 PM 转给真机 |
-| **G3b** | **2026-10-17** | 双本体弱配对数据采集完成（10–12 任务 × 30 episode × 2 本体）+ **基座微调数据切分（含 E0 切分）冻结** | 采集完成度 <60% → 放弃对齐图，全面转向 training-free language-key 变体作主结果（论文不死，结论换了）。**注意：基座微调一旦开始，E0 切分不可更改，否则要重训** |
-| **G4** | **2026-11-14** | 仿真（或离线代理）上任一 value 层的跨本体 success rate 显著高于 frozen base（>2 个点，3 seeds）；同时给出 derive-on-read 的读出延迟数 | 无任何层超过 frozen base → **不要启动完整阶段 B**，转为负面结果论文（“Why a robot's action memory does not transfer across bodies”），把省下的时间全给 P2 归因深度。若 derive-on-read 延迟在预算内且 success rate 持平 → Contribution 2 改写为 protocol/measurement 贡献（措辞已在 §3.4 预写） |
-| **G5** | **2026-12-19** | 前 4 个任务的首批跨本体真机数字（含 injection rate） | 跨本体 SR < frozen base，或 IR < 20% → 同 G4 的转向。此时只剩 2.5 个月，**必须当天决定** |
-| **G6** | **2027-01-30** | 实验冻结；Fig. 4 由实测数据绘制；决定 6 页还是买 1 页 | Fig. 4 若与 P1 预测不符 → 按 §4.5 的“若被推翻”列同步替换 Title、Abstract、¶5 预注册句、Contribution 2 四处（**它们是绑定的，不可只改一个**） |
-| **G7** | **2027-02-28** | 内审完成（含逐条核对 §1.0 写作红线与 Table I 每一格的证据来源） | — |
+| **G0** | **2026-08-29** | (a) ~~确认 PiperX 型号~~ **✅ 已确认为官方 `piper_x`**；剩余：读两台固件 DH 版本 `GetPiperFirmwareVersion()`；(b) **★ 实测两台夹爪 TCP 偏置并重跑全部运动学脚本**；(c) 两台台架几何实测（臂间距/倾角/立柱/相机）；(d) **★ 落锤 FTE 数字**；(e) 按 §0.6 判准重做**锁关节角 sweep**；(f) 跑完 `equalbudget.py`（双臂 equal-budget） | (b) 重跑前**正文不得写任何可行率数字**；(d) <2.5 FTE → **当天切 MVP** |
+| **★ G0.5（最高优先，新增）** | **2026-09-05** | **同本体交叉点**：200 条 Piper 条目，同一台 Piper 上 ④直接回放 vs ③ FK→IK 回放，比 SR 与末端轨迹误差（离线 + 40 trial 真机确认） | **`SR(④)−SR(③) < 5 pp` → 四层谱系框架当场死亡，启用 cross-body admissibility framing。不等 G4。** 同时 **demo 第二段拍不出来**，demo 结构改为第一段 + 第三段扩写 |
+| **G0.6** | 2026-09-05 | 用真实存量语料统计三族的**真实 exec+复位时长分布** → 锁定预算；**★ PiperX FK 一致性硬验收**（20 构型，<5 mm/<2°） | FK 残差 >5 mm → **全部离线阶梯与 φ 数字作废，P5 撤回**，必须先解决标定。**这是单点故障，必须最先做** |
+| **G1** | **2026-09-12** | **Fig. 3 两联图（纯离线）**：四种 key × 四种条件（**含"相机重装位"这一纯 key 侧控制档**）的分布 + 重标定后 precision@10 / AUC vs chance；**π_d pilot 结果** | 四种 key 重标定后 precision@10 全 ≤ chance → 主结果改 language-keyed only，对齐图从方法降级为失败的 ablation，重心全移到 §V-C 归因；**π_d^F > 0.40 → F 族强制走 (P-deformable)** |
+| **★ G2a（不可延）** | **2026-09-26** | **门 + 拉链**上的跨本体开环重放（各 50 episode，**离线可做**，前端只用"铰链一次性标定 + 抓后夹爪位姿代理"）：末端轨迹误差 + 接触点命中率 + **双臂 `T_rel` 保持误差** | 误差 >3 cm 或命中 <60% → **层③整体证伪**，论文重心立刻转 P2 归因。**通过后立即 arXiv 占位** |
+| **★ G2b（新增）** | **2026-11-07** | **叠衣**上的同一套数，用关键点前端 | 不过 → **叠衣退出 confirmatory 降为定性**，主表只用门+拉链（即自动落到 §5.3 的 MVP） |
+| **G3a** | 2026-10-03 | 同一 MuJoCo 场景内换 piper_h / piper_l URDF 重跑（官方 MIT 资产，已具备）；**④轴改报二维 (位置, 姿态)** | 不可行 → 仿真退出正文 |
+| **★ G3c（新增）** | **2026-11-07** | **基座 SR 窗口探针**：10k 步小规模微调，测 `T_eval` 零样本 SR 是否落在 **20–60%**（约半天） | 不落窗口 → **当天改 `T_base`/`T_eval` 划分**（此时切分尚未冻结）。**必须早于 G3b** |
+| **G3b** | **2026-10-17** | D12 采集完成 + **E0 切分冻结**（+ 家电/包实例扩充完成，**族数 3→5**） | 完成度 <60% → 放弃对齐图，转 training-free language-key。**注意：基座微调一旦开始，E0 切分不可更改** |
+| **G4** | 2026-11-14 | 任一层跨本体 SR 显著高于 frozen base（>2 pp）；derive-on-read 读出延迟数 | 无 → 转负面结果论文；derive-on-read 延迟在预算内且 SR 持平 → Contribution 2 改写为 protocol/measurement 贡献 |
+| **G5** | 2026-12-19 | 前 4 任务首批跨本体真机数（含 injection rate）；**demo 第一段样片（不要等到 G6）** | 跨体 SR < base 或 IR<20% → 当天转向 |
+| **G6** | 2027-01-30 | 实验冻结；Fig. 4 实测绘制；决定 6 页还是买 1 页 | 与 P1′ 不符 → **同步替换 Title / Abstract / ¶5 预注册句 / Contribution 2 四处**（绑定，不可只改一个） |
+| **G7** | 2027-02-28 | 内审（逐条核对 §1.0 写作红线与 Table I 每格证据来源） | — |
 | — | **2027-03-10** | 投稿 | — |
 
-**最可能烂尾的一环（明确点名）**：**不是 key 对齐**（它有清晰的退化路径：退到语言 key，P1 曲线依然可测，只是工作点右移），而是 **③ 层 object-anchored 任务坐标系在移动本体上的定义与标定**。对移动底盘而言基座锚定坐标系无意义，只能物体锚定，于是它退化为一个 6-DoF 物体位姿估计问题 —— 一个会一直“差不多能用”但永远不够准的问题，而且它同时是 ② 和 ③ 的前端。典型烂尾方式：前 3 个月一直显示“基本 work”，第 5 个月做真机跨本体时才发现误差量级吃掉了全部迁移增益，而那时四点谱系已经写进 Intro 和 Fig. 1。**G2 的开环重放实验是强制早期暴露的手段** —— 它不需要策略、不需要记忆库、不需要完整管线，两周内可做完，且给出一个可判定的 cm 级数字。
+**★ 排期上最重要的一条改动**：原 G2 放在 9-26 且任务选叠衣，**那天必然交不出数**（叠衣语义关键点检测器 5 周内不可能就绪 → 假 gate）。拆成 **G2a**（门+拉链，离线可做，不可延）与 **G2b**（叠衣，11-07）之后，9-26 一定有数可交，**且交的是决定论文骨架的那个数**。
 
-**arXiv 占位建议**：**G1 通过后立即**把 P1–P3 的预注册预测挂上 arXiv。抢跑风险源已明确：Dejavu（逐字写出我们的方案）、RECAP（把跨本体检索表示标为 open question）、Retrieve-then-Steer 团队（已有 OpenArm + ALOHA-PiPER 两套双臂真机，硬件上完全具备顺手做跨平台共享的条件）、RoboMME 团队（有基准、代码、leaderboard、π0.5 pipeline，做 v2 的边际成本远低于我们）。
+**buffer**：G5→G6 之间必须留 **≥1.5 周**的重训/重跑 buffer。**现在这个排期的 slack 是 0。**
+
+**最可能烂尾的一环（明确点名，已更换）**：不再是"③层 object-anchored 在移动本体上的定义与标定"（移动臂已消失），而是 **叠衣语义关键点前端**。典型烂尾方式：前 3 个月一直显示"基本 work"，第 5 个月做真机跨本体时才发现关键点误差吃掉全部迁移增益，而那时四点谱系已写进 Intro 和 Fig. 1。**对策**：G2a/G2b 拆分；MVP 直接把叠衣降为 exploratory。
+**第二个未量化的风险**：通用点跟踪器（SAM2 / CoTracker / TAPIR）在**布料自遮挡**下的 drift——**查不到任何 benchmark**。对策：用 **Flat'n'Fold (2409.18297) 的多视角序列**自建小规模评测，零采集成本。**诚实标注：目前无解，只能自测。**
+
+**arXiv 占位建议**：**G2a 通过后立即**把 P1′/P2/P3′ 的预注册预测挂上 arXiv（G1 的 Fig. 3 是纯离线，也可作为占位内容）。抢跑风险源排序已变：
+1. **Retrieve-then-Steer 团队（升到第一位）**——已同时拥有 6-DoF ALOHA-PiPER 与 7-DoF OpenArm 两具异构双臂真机，正文点名二者 "different arm kinematics"，**做跨本体记忆只差一个实验**
+2. Dejavu（逐字写出我们的方案）
+3. RECAP（把跨本体检索表示标为 open question）
+4. RoboMME 团队（有基准、代码、leaderboard、π0.5 pipeline，做 v2 的边际成本远低于我们）
+
 
 
 ---
@@ -862,40 +1237,51 @@ robot-hours = sum over arms of  (#tasks x #trials x #rollouts-per-trial x minute
 
 **P0 — 本周内（阻塞其他一切）**
 
-1. **VLAC 权重可得性核实**（半天）。**【待确认】** VLAC 论文中作 critic 用的是 8B 规模的 InternVL 版本，PDF 内查不到代码/权重发布声明。若不可得：写入门控改为“遥操数据的隐含成功标签 + 轻量任务级成功分类器”，Intro ¶4(e) 的 why-now 论据从“跨本体 critic 已存在”改为“写入门控只需高 precision 低 recall 的工作点，少量标注即可达”。另需预算：8B critic 对 10⁴ episode 打分，按 0.3 s/次 × 30 评估点/episode ≈ 25 GPU-hours。
-2. **`PORTMEM` / `XEM` 重名检索**（半天）。Table I 末行、§II-D、Title、Abstract 四处已按已定名书写；v3 的 CAMEL 已撞车一次。
-3. **母句的最终措辞落锤**（§1.2 那句），并在一个文件里写死，Title / Abstract / ¶2 / C1 / Fig.1 caption 五处派生。
-4. **E0 的数据切分方案落锤**（哪些任务进 `base-finetune`、哪些进 `T_eval`、哪些进 `T_align`）。**基座微调一旦开始就不可改**。
-5. **启动 D12 弱配对数据采集**（10–12 任务 × 30 episode × 2 本体），与仿真验证并行。这是唯一“如果不做完，后面全部实验都不能开始”的数据依赖，且在 baseline 计划里一次都没出现过。
+1. **★ 实测两台夹爪的 TCP 偏置并重跑全部运动学脚本**（零成本，**新增最高优先**）。用户已确认**两台夹爪不同款**，而 `RAL2027/kinematics/` 里每一个数（82.8° / 7.10 cm / 17.8° / 80.8% / 57.3%）都建在"同款夹爪、仅安装 rpy 差 90°"这个前提上。**重跑之前正文不得写任何可行率数字。** 顺带把"夹爪差异单独贡献几个百分点"报成 embodiment 阶梯上的一档（这一档现在是**免费且原生**的）。
+2. **★ 在存量 Piper 真实轨迹上重算 per-task 层③可行率 φ**（零成本，**全文最关键的一个数**）。均匀关节采样的任务盒位姿分布与真实家居操作（集中在把手高度、桌面、包口这少数几处）完全不同；真实分布下 φ 可能是 99%（**谱系当场压平**）也可能是 40%。同时报 (a) 全局 φ、(b) **per-task φ**（P3′ 的秩相关直接需要，也是 demo 第四段挑变体的依据）、(c) φ 沿 episode 时间轴的分布。**与第 1 条合并做——夹爪 TCP 修正后一次算完。**
+3. **★ 从已采集的门任务轨迹反推铰链轴**（零成本）。用户确认**尚未做铰链标定**。门把手轨迹是圆弧，对末端位姿序列拟合共同螺旋轴即可。**多条 episode 拟合出的轴一致（残差小）则同时证明两件事**：家电在采集期间没移动过、且轴已经拿到——**存量数据直接变成③层可用、零重采**。若不一致则需按场次标定或退到在线估轴（3–4 周）。
+4. **母句的最终措辞落锤**（§1.2 那句 + **第四个限定词** `of a different kinematic family`），在一个文件里写死，Title / Abstract / ¶2 / C1 / Fig.1 caption 五处派生。
+5. **E0 的数据切分方案落锤**。**★ 加两条前置**：必须先过 **G3c**（SR 20–60% 窗口探针），且必须先完成**家电/包实例扩充（族数 3→5）**。**基座微调一旦开始就不可改。**
+6. **★ 第一天就架第三方电影机位 + rollout 元数据与视频帧同步落盘**（§4.10.6）。**不做则 demo 第三段（harm 案例）永远拍不出来**——它完全依赖能从日志检索出 `base 成功 & ours 失败` 的成对样本。事后补拍成本是 ×10。
+7. **启动 D12 弱配对数据采集**（用户已确认可随机启动采集，不受存量语料重合度限制）。
+8. **★ 把 `pi0.py::sample_actions` 的 `jax.lax.while_loop` 展开为 Python 循环 + 同 seed 数值一致性检查**（半天）。**已核源码**：carry 是 `(x_t, time)`，`num_steps` 默认 10。**排在所有记忆库工程之前。**
+9. **★ 把 cross-body admissibility framing 写成一段 pre-registration 放进补充材料**，G0.5 触发即启用。
 
 **P1 — 两周内**
 
-6. **是否在 RoboMME 上报数 → 决定：不报数。** 理由：其仿真与真机都只有一台 Franka Panda，无法承载核心实验；移植成跨本体版需重跑 ManiSkill planner，且 Imitation/Video 任务的“演示阶段”本身就是那台 Franka 的运动，换本体后演示与执行本体不一致会改变任务语义。**只沿用其表示轴/注入轴的术语并引用其 §6 “将 mobile manipulation 和 ... memory-bank methods ... 留待未来研究（leaving mobile manipulation and ... memory-bank methods ... for future study）”。** 这条决定 II-A 的最后一句与 II-D 的第 3 句。
-7. **主打新颖性排序 → 决定：multi-reader / bidirectional 共享库为主，“换读者无策略梯度”为代价论据。** RECAP 的 pool 从不部署，双向读写是它结构上没有的设置。此决定改变 Title、Abstract 首句与 Contribution 排序（已按此写）。
-8. **“零梯度”口径 → 决定：全文写 “no gradient reaches either policy once deployed”，并在 ¶4 主动交代基座微调 + E0。** 同时**必跑** training-free language-keyed 变体作为诚实地板（成本近零，是唯一不受对齐图泄漏影响的 arm）。
-9. **真机 trials 数 → 决定：主端点 12 任务 × 20 成对 trial。** 对照：Retrieve-then-Steer 真机 50 trials/任务、RECAP 10 trials/任务、VLA-Pro 20 trials/任务。我们用工作量透明度（机器人小时表）换 trials 数的不足。
-10. **Retrieve-then-Steer 的可比性 → 决定：先做 LIBERO-10 + π0.5 的保真度复现门槛**（92.4→94.4，其 std 0.2–0.8）。未通过则全文改称 reimplementation 且不做“优于”主张，四个未公开值（t_min / 评估间隔 Δ / DTW 剔除阈值 / action horizon H）在附录给敏感性扫描。
+10. **JAX 训练侧实测**：跑 `uv run scripts/train.py debug_pi05` 十步（半天）。用户已确认 5090 **推理**可跑，但 JAX 对新架构常常**推理 kernel 先于训练 kernel 就绪**。
+11. **是否在 RoboMME 上报数 → 决定：不报数。** 只沿用其表示轴/注入轴术语并引用其 §6 把 mobile manipulation 与 memory-bank methods 留待未来研究。
+12. **主打新颖性排序 → 决定：multi-reader / bidirectional 共享库为主，"换读者无策略梯度"为代价论据。**
+13. **"零梯度"口径 → 决定：全文写 "no gradient reaches either policy once deployed"，并在 ¶4 主动交代基座微调 + E0。** 同时**必跑** training-free language-keyed 变体作诚实地板。
+14. **真机 trials 数 → 改为 `n = 785·π_d`**，`π_d` 预注册并在 G1 前 pilot 实测。对照锚点：**R-t-S 真机 50 trials/任务（同硬件同任务）**、RECAP 10、VLA-Pro 20。
+15. **Retrieve-then-Steer 的可比性 → 先做 LIBERO-10 + π0.5 的保真度复现门槛**（92.4→94.4，其 std 0.2–0.8）。未通过则全文改称 reimplementation 且不做"优于"主张。
+16. **★ 跑完 `equalbudget.py`（双臂 equal-budget 三 arm 对照）与 `lockedsweep.py`（锁关节角 sweep）**。前者决定"协同 +10 pt"这条 Contribution 留不留；后者决定锁关节档还能不能当 plan B。
 
 **P2 — 一个月内**
 
-11. **Miras / Titans 的理论 framing → 决定：全砍。** 理由：(a) 6 页里 0.25 页 ≈ 一张实验图，而这段不做任何主张；(b) v3 已在 Miras 上栽过一次（把它读成“预言了外部记忆空白”），任何多余的 Miras 表述都是纯增的攻击面；(c) 按 Miras 四轴，我们、Retrieve-then-Steer、RECAP、Dejavu 会落在同一格，做不了定位工作。若坚持保留，压到 1 句放 §III 第一段。
-12. **RT-X / OpenVLA 一族是否给 Table I 一行 → 决定：不给**（共训产生权重而非记忆对象，有原则的排除，正文写明一句）。若改主意，**必须先读一手 PDF**，不得引用任何未核对的数字/venue。**【待确认：本组尚未读过这一族任何一手 PDF】**
-13. **Behavior Retrieval (2304.08742) / STRAP (2412.15182) → 决定：Table I 整行删除**，正文一句话划走（“检索的是训练数据，取回后仍要跑梯度”）。若要保留该行，必须先读全文补齐 4 个 `?`。**不得靠推测填格。**
-14. **RA-VLA (ICML'26) → 决定：从参考文献删除**，除非拿到一手 PDF。不能凭 OpenReview 条目描述引用。
-15. **VINN 的 venue 核实**（arXiv comment 无 venue 字段）。引用时暂标 arXiv。
-16. **LaTeX 模板**：`RAL2027/paper_src/` 现为 ICRA 的 `ieeeconf` 模板，投 RA-L 需换 `IEEEtran` 期刊格式。换完立刻用真实字数做一次排版对账，验证 §0.5 的 6.00 页估算。
-17. **openpi 源码中确认 π0/π0.5 action expert 的注意力掩码与前缀 KV 结构**（关系到注入点实现与 D8 的工期）。
+17. **Miras / Titans 的理论 framing → 决定：全砍。**
+18. **RT-X / OpenVLA 一族是否给 Table I 一行 → 决定：不给**（共训产生权重而非记忆对象）。**【本组尚未读过一手 PDF】**
+19. **Behavior Retrieval / STRAP → 决定：Table I 整行删除**，正文一句话划走。**不得靠推测填格。**
+20. **RA-VLA (ICML'26) → 决定：从参考文献删除**，除非拿到一手 PDF。
+21. **VINN 的 venue 核实**（arXiv comment 无 venue 字段）。引用时暂标 arXiv。
+22. **LaTeX 模板**：`RAL2027/paper_src/` 现为 ICRA 的 `ieeeconf`（**按用户指示保留**）。若最终投 RA-L 需换 `IEEEtran`，换完立刻用真实字数做排版对账。
+23. ~~openpi 源码中确认注入点~~ **✅ 已完成**（见 P0 第 8 条）。
+24. **`PORTMEM` / `XEM` 重名检索**：**arXiv 已查零命中**（`"cross-embodiment memory"` / `"transferable memory"+cs.RO` 同样零命中），**仍需查 ACM/DBLP**。
+25. **★ 页数决定提前**：新增内容（P5、三档标定表、两个主端点、六级 oracle 阶梯）会挤爆 §V 的 2.05 页。**建议现在就决定买 1 页（7 页）**，而不是拖到 G6。
+26. **★ 参考文献按族打包**：v5 §9.5 新增约 30 条（铰接感知 / 可形变 / DLO / point-track / 双臂协同 / 基座对照 / 任务坐标系理论）。**40 条硬预算下必须每族只单列 2–3 篇，其余合并 e.g.**，或买 1 页。
+27. **venue 订正三条**：VLAC → **ICML 2026**（README 挂 OpenReview `i7mfaYYLDf`）；SRPO → **CVPR**（PDF 页眉逐字）；TwinVLA → **ICLR 2026 Poster**（新增）。
 
 **P3 — 写作期**
 
-18. Fig. 1 的两张真机实拍（含房间背景差异）—— G3b 之前补拍。
-19. Fig. 1(b) 的四层内容必须从我们自己的库导出真实样例，不要手编。
-20. Table I 每一个非平凡格子在 caption 或脚注给出证据来源（页码）。**任何一格被作者本人认为不实，整节可信度归零。**
-21. 所有 venue 逐条经 arXiv API / 一手 PDF 复核；无已发表 venue 的（Retrieve-then-Steer、RECAP、VLA-Pro、Dejavu、RoboMME）**只能标 arXiv preprint**。v3 的 venue 错误密集（SOP 基座、RA-VLA 会议、MemoryVLA++ 时间线、Episodic Memory Banks 查无此文），复发一次就会让审稿人不信任整份书目 —— 而本文的说服力**完全**建立在书目精确度上。
+28. Fig. 1 的两张真机实拍（**双臂 Piper / 双臂 PiperX**，含工位背景差异）—— G3b 之前补拍。
+29. Fig. 1(b) 的四层内容必须从我们自己的库导出真实样例，**不要手编**；素材直接来自 demo 第二段。
+30. Table I 每一个非平凡格子在 caption 或脚注给出证据来源（页码）。**任何一格被作者本人认为不实，整节可信度归零。**
+31. 所有 venue 逐条经 arXiv API / 一手 PDF 复核；无已发表 venue 的（Retrieve-then-Steer、RECAP、VLA-Pro、Dejavu、RoboMME）**只能标 arXiv preprint**。v3 的 venue 错误密集，复发一次就会让审稿人不信任整份书目 —— 而本文的说服力**完全**建立在书目精确度上。
+
 
 ---
 
-## 附：本大纲相对 v4 的主要修订清单（供追溯）
+## 附 A：本大纲相对 v4 的主要修订清单（供追溯）
 
 | v4 的写法 | 本大纲的写法 | 依据 |
 |---|---|---|
@@ -915,3 +1301,37 @@ robot-hours = sum over arms of  (#tasks x #trials x #rollouts-per-trial x minute
 | 沿用 RoboMME 的 when/where/what/how 四维分类 | 只沿用其表示轴与注入轴术语；四维仅作 Intro 一句修辞 | 我们的任务在其意义上基本是马尔可夫的，硬对齐是修辞 |
 | entry 粒度未定义 | **片段级**（夹爪状态机 + 速度过零），双单位报数 | 粒度不定则规模主张与存储成本论证都不成立 |
 | 成本论据 O(T·B) → O(1) | **删除**，改为三列实测代价表 + **时效性论据** + E5 实验 | O(1) 无依据；且回答不了“为什么不共训” |
+
+---
+
+## 附 B：v1 → v1.1 的修订清单（硬件变更 + v5 §9 补丁，2026-08-24）
+
+| # | v1 的写法 | v1.1 的写法 | 依据 |
+|---|---|---|---|
+| 1 | 本体 = FR3（定基 7-DoF）+ 移动臂；对照轴 = 定基↔移动、定视角↔变视角 | **双臂 Piper（球腕 Puma 型）↔ 双臂 PiperX（偏置腕 UR 型）**；对照轴 = **运动学族 + 关节限位包络** | 无 FR3 真机数据 |
+| 2 | 三个限定词 | **四个**（加 `of a different kinematic family`） | PiperX 确认为官方 `piper_x` |
+| 3 | P1：cross-body 随抽象度上升 | **P1′：交叉点是唯一主张**（同本体 ④>③ 且跨本体 ③>④） | 单调上升不是 finding——GR00T N1.7 已主张 relative EEF |
+| 4 | P3：归因 viewpoint variability；对照 = 锁底盘 | **P3′：归因读者限位包络覆盖率**；对照 = **工作空间交集核**；**新增 Spearman 秩相关（离线 φ 预测在线 Δ）** | 旧机理被证伪：体素 **IoU=0.528**，两者互不包含 |
+| 5 | — | **★ 新增 P5**：层④失败←架构（标定后仍 7.10 cm/17.8°）；层③失败←限位（放宽即 100%）。**两者不得合并叙述** | 一手复算；**这是审稿人 20 行代码就能证伪的地方** |
+| 6 | ③ = object-anchored EE deltas（依赖 6-DoF 刚体位姿） | ③ = **anchor-frame contact-point motion + `(T_abs,T_rel)` 拆分**；四类任务四种锚点（铰链螺旋轴 / DLO 弧长 / 语义关键点 / SOI 环） | 衣物、垃圾袋**没有刚体系** |
+| 7 | ④ = 关节动作 / **action-expert 潜码** | ④ = **原始关节指令，物理单位，reader 侧不允许任何被训练过的解码器** | "潜码"正是 GR00T EmbodimentTag 在做的事；物理单位防**纯归一化失配**这个平凡混淆 |
+| 8 | 单一 pooled 主端点（12×20 McNemar） | **两个 co-primary 端点**：(P-rigid) 门+拉链成对 McNemar / (P-deformable) 叠衣分层随机化 + 连续进度分。**HR 定义随之分裂，不可 pooled** | 配对有效性与统计头room **系统性反相关** |
+| 9 | 240 成对 trial，效力 80% | **`n = 785·π_d`**，π_d 预注册并 pilot 实测 | π_d≈0.30 这个隐含假设从未被声明；长时程可形变任务可能到 0.5 → n=392 |
+| 10 | P3 任务级符号检验 n=12，p≈0.0005 | **族级 cluster 重抽样**；**族数 3→5**；ordinal 进度分消除 tie | 伪重复：12 变体只来自 3 族，**n_eff≈4.3**，全同向 p 从 0.000244 变成 **0.0625（不显著）** |
+| 11 | 消融 A1–A6 | **+A7**（④+腕部重解算，82.8°→6.7°，附 `④+wrist-repair ≡ ③` 论证）**+A8**（coordination-oracle，第四桶） | 不加 A7 会被判层④是稻草人 |
+| 12 | oracle 阶梯五级四差 | **六级五差**（`Δ_retarget` 拆 `Δ_limit`(19.2pt) + `Δ_geom`(0.0pt)，插入 coordination-oracle）；**限定只在 D/Z 两族跑**；**预注册负值处理** | 归因错误比压平更致命；F 族 anchor-oracle 不可得 |
+| 13 | 分段 = 夹爪状态机 + EE 速度过零 | **双轨分段**：轨 A（零依赖，立即可做）/ 轨 B（感知就绪后）。**禁止主线任何一个数等待轨 B** | 对拉链与门退化为 1 段/episode；新规则会把并行支路拧成串行 |
+| 14 | 跨本体 trial 单位成本高于同本体 | **两平台并行运行，单位成本相同** | Piper 与 PiperX 是**两套独立台架**，无物理拆装 |
+| 15 | 预算 135–155 h | **≈152 h**（按族计时 + G0.5 + A/A + π_d pilot + demo 增量 1.8 h） | 1.5 min/rollout 对家居长时程错 2–3 倍 |
+| 16 | 记忆库 10⁴–10⁵ 条 | **10⁴–N_max，明写 N_max**，规模曲线对数下采样 | 按实际语料核算只到 10⁴–3×10⁴ |
+| 17 | reader #3 = FR3 换夹爪+移相机+锁关节 | **单臂模式 reader**（在售 SKU，14→7 维，通过全部五条判准）；锁关节降 plan B 且须做锁定角 sweep | 锁关节按原定义把关节锁在**零位**＝人为最劣化配置，违反判准 3 与 5 |
+| 18 | 人月 ≈11 PM | **≈16–16.5 PM**，需 2.5 FTE；MVP ≈9–10 PM | 逐项重估 |
+| 19 | G2（9-26，叠衣）| **拆 G2a（门+拉链，9-26，不可延，离线可做）/ G2b（叠衣，11-07）**；新增 **G0.5 / G0.6 / G3c** | 叠衣关键点检测器 5 周内不可能就绪 → 原 G2 是**假 gate** |
+| 20 | 最可能烂尾 = ③层在移动本体上的标定 | **= 叠衣语义关键点前端**；第二风险 = 点跟踪器在布料自遮挡下的 drift（**查不到任何 benchmark**） | 移动臂已消失 |
+| 21 | R-t-S = 注入机制提供者 | **= 同硬件同任务的直接前作**（附录 D：双臂 AgileX PiPER 叠 T 恤，π0.5 42.0→50.0，50 trials/任务）；**抢跑风险升到第一位** | 一手核实 |
+| 22 | — | **★ 新增 §4.10 真机 demo 规划**（五段脚本 + 任务选角 + 四条规矩 + 录制纪律 + 与 gate 的关系） | demo 的职责是让审稿人 15 秒内相信一件他本来不信的事 |
+| 23 | — | **★ Table I 第 6 行 body 列补注** `ALOHA-PiPER + OpenArm`——他们**已经有两具异构双臂本体，只是没让记忆跨过去** | 最诚实也最有力的定位 |
+| 24 | ③层占位者 = Di Palo & Johns / DINOBot | **+GR00T N1.7（relative EEF）+ point-track 一族 9 篇**；③层**不能再宣称新颖**，重定位为"已知会迁移的那一层，作 upper anchor" | 一手核实 |
+| 25 | — | **★ 两台夹爪不同款** → 全部 φ 数字需用实测 TCP 偏置重算；同时"换夹爪"档变成**免费且原生** | 用户 2026-08-24 答复 |
+| 26 | — | **★ 铰链未标定** → 需确认家电采集期间是否移动过；未移动则可**追溯标定**（存量数据零重采变③层可用）。**零成本自检：对门轨迹拟合共同螺旋轴** | 用户 2026-08-24 答复 |
+

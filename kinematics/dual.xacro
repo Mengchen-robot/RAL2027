@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="dual_piper_xacro">
+
+
+<xacro:include filename="$(find dual_piper)/urdf/dual_piper.urdf"/>
+
+<xacro:include filename="$(find dual_piper)/urdf/piper_fl.urdf"/>
+<xacro:include filename="$(find dual_piper)/urdf/piper_fr.urdf"/>
+
+
+<joint name="base_to_piper_fl" type="fixed">
+    <origin xyz=" 0.0075 -0.285 0.01" rpy="0.0 0.0 0.0"/>
+    <parent link="base_link"/>
+    <child link="fl_base_link"/>
+    <axis xyz="0.0 0.0 0.0"/>
+</joint>
+
+
+<joint name="base_to_piper_fr" type="fixed">
+    <origin xyz="0.0075 0.285 0.0" rpy="0.0 0.0 0.0"/>
+    <parent link="base_link"/>
+    <child link="fr_base_link"/>
+    <axis xyz="0.0 0.0 0.0"/>
+</joint>
+
+
+    
+</robot>

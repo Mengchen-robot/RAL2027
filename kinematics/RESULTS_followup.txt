@@ -1,0 +1,13 @@
+============================================================================
+4. DIRECTIONAL ASYMMETRY inside task box (basis for new P3)
+   writer piper    -> reader piper_x  : layer-3 IK feasible  80.0%   (box acceptance of writer 4.93%)
+   writer piper_x  -> reader piper    : layer-3 IK feasible  57.3%   (box acceptance of writer 3.09%)
+============================================================================
+5. COOPERATIVE SLACK LADDER (how much task-level float the anchor allows)
+   150 bimanual pairs
+   rigid anchor  (doors: hinge fixed)  :  82.7%
+   tight  +/-2cm,5deg (articulated)    :  84.7%
+   loose  +/-10cm,20deg (free cloth)   :  92.7%
+============================================================================
+
+[exited with code 0]

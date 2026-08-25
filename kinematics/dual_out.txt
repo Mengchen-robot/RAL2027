@@ -1,0 +1,11 @@
+bimanual samples: 80
+A. dual-arm Piper->PiperX
+   naive per-arm independent IK (both arms exact):  35.0%
+   T_rel-preserving with free T_abs (rigid g search): 65.0%
+
+B. locked-joint ladder (reader = PiperX, writer = Piper), N=120
+   locked | full 6-DoF pose IK | pos+approach-axis (5-DoF task)
+     j4  |        0.0%        |     0.0%
+     j5  |        0.0%        |     0.0%
+     j6  |        0.0%        |    71.7%
+    none  |       66.7%        |     (6-DoF ref)
